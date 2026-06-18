@@ -28,6 +28,23 @@ support Python 3.13 on arm64, step deterministically headless, and render offscr
 kinematics/perception/SDK/autonomy layers are sim-agnostic by design (sim state injected at the edges),
 so the blast radius is confined to `feathersim/sim/`.
 
+## 2026-06-18 — Perception: visual state cues + balanced auto-labeling from ground-truth configs
+**Decision:** Make machine state visually observable (per-machine **status light** idle=gray /
+running=amber / done=green, plus a **bed-part** geom for part-present), render a per-machine cropped
+camera, and auto-label by placing the sim in **randomized ground-truth configurations** — every
+machine lit with an independently sampled (state, part) — then reading labels straight from the config.
+A small 2-head CNN (concat max+avg global pool) predicts state (3-class) + part-present (binary).
+**Why:** A vision model needs a visual cue, so state had to be made renderable. Sampling configs
+directly (rather than only logging a running sim) gives **class balance** and **decorrelated heads**
+(part-present sampled independently of state), so the part head is a real task, not a shadow of state.
+Lighting *all* machines in the dataset matches what the live camera sees (`sync_visuals` lights all),
+eliminating a train/serve gap. Result: held-out state accuracy 1.0 vs a 0.39 majority baseline.
+**Tradeoff:** The cues are synthetic and high-contrast, so the task is easy — fine, the headline is the
+auto-labeling pipeline + closing the loop, not hard perception. The per-machine crop is only loosely
+cropped (neighbors graze the frame edge); acceptable because all machines are lit consistently. Cue
+geoms are non-colliding so they don't obstruct navigation. Metrics committed to `perception/metrics.json`;
+the trained `model.pt` is gitignored (regenerate via `make train`).
+
 ## 2026-06-18 — Kinematics & perception logic as pure functions
 **Decision:** Drive kinematics and perception decision logic live in pure functions with no sim
 import; sim state is injected at the edges.

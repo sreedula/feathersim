@@ -85,15 +85,30 @@ pre/postconditions (raise on violation); tests cover composition + each pre/post
 > `SkillError`; typed `world` param; `tending_pose` y=0 fallback note). `place` explicit-pose path now
 > tested. 63 tests green.
 
-## Phase 4 — Perception + auto-labeling  `[ ]`  ← checkpoint (metrics)
+## Phase 4 — Perception + auto-labeling  `[x]`  ← checkpoint (metrics)
 
-**Acceptance:** model beats a trivial baseline on a held-out sim set; metrics logged.
+**Approach (confirmed):** make machine state visually observable — a per-machine **status light**
+(idle=gray, running=amber, done=green) + a **bed part** geom toggled for `part-present`. A per-machine
+**cropped camera** renders the close-up. Dataset is auto-labeled: place the sim in randomized
+ground-truth configs (state × part-present, independently sampled for class balance + decorrelated
+heads), render, read labels straight from the config — zero hand labeling. Small 2-head CNN.
 
-- [ ] `dataset.py`: render camera frames + auto-label from sim ground truth
-- [ ] `model.py`: small CNN (machine-state + part-present heads)
-- [ ] `train.py`: train/val split, metrics logging
-- [ ] `infer.py`: `perception.read(camera) -> state`
-- [ ] Held-out accuracy beats majority-class baseline; metrics committed
+**Acceptance:** held-out machine-state accuracy **beats the majority-class baseline** by a clear
+margin; metrics logged to a committed file; `perception.read` returns predicted (state, part-present)
+from a camera frame. Tests deterministic (seeded) — green.  **Result: state acc 1.0 vs 0.39 baseline.**
+
+- [x] `sim/world.py`: per-machine `light_i` + `part_i` geoms (non-colliding); `set_machine_visual` /
+      `sync_visuals`; per-machine `MjvCamera`; render helper
+- [x] `perception/dataset.py`: render crops + auto-label from ground-truth configs (balanced split)
+- [x] `perception/model.py`: small 2-head CNN (state: 3-class, part-present: binary), max+avg pool
+- [x] `perception/train.py`: train/val, metrics → `metrics.json` (committed); `make train` CLI
+- [x] `perception/infer.py`: `Perception.read(image)` / `perceive(world)` → predicted state
+- [x] Tests: dataset shapes/labels, model output shapes, train beats baseline, infer correctness
+
+> Reviewer: SHIP, all LOW. Addressed in-phase: `_PART_RGBA` wired into MJCF (no dup), serve-time
+> part-coupling documented in `sync_visuals`. Deferred LOW: per-machine camera is loosely cropped
+> (neighbors graze the frame edge) — revisit only if Phase-5 perception gets noisier. Render tests
+> skip on a headless host without a GL backend (set `MUJOCO_GL=egl`).
 
 ## Phase 5 — Autonomy loop  `[ ]`
 

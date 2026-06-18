@@ -1,0 +1,6 @@
+{
+  "state_accuracy": 1.0,
+  "part_accuracy": 1.0,
+  "state_majority_baseline": 0.39444444444444443,
+  "n_val": 180
+}

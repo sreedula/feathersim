@@ -27,6 +27,14 @@ TABLE_XY = (0.0, -1.5)   # output/parts table, opposite the machines
 # Distinct machine colors (RGB 0–1) so renders/print output are easy to tell apart.
 _MACHINE_COLORS = [(0.85, 0.25, 0.25), (0.25, 0.65, 0.30), (0.90, 0.70, 0.20)]
 
+# Status-light color per machine state — the visual cue the perception model learns to read.
+STATE_LIGHT = {
+    MachineState.IDLE: (0.55, 0.55, 0.58),     # gray  — idle/empty
+    MachineState.RUNNING: (0.95, 0.65, 0.10),  # amber — machining
+    MachineState.DONE: (0.15, 0.85, 0.25),     # green — finished part ready
+}
+_PART_RGBA = (0.15, 0.35, 0.95, 1.0)  # vivid blue — high contrast vs floor, door & machines (alpha 0 hides)
+
 
 def _machine_positions(n: int) -> list[tuple[float, float]]:
     """Lay ``n`` machines in a row along x at ``MACHINE_Y``, facing the robot at the origin."""
@@ -36,8 +44,16 @@ def _machine_positions(n: int) -> list[tuple[float, float]]:
     return [(float(x), MACHINE_Y) for x in xs]
 
 
+def _rgba_str(rgb_or_rgba: tuple[float, ...]) -> str:
+    """Format an RGB(A) tuple as an MJCF ``rgba`` attribute value (alpha defaults to 1)."""
+    vals = tuple(rgb_or_rgba) + (() if len(rgb_or_rgba) == 4 else (1.0,))
+    return " ".join(f"{v:g}" for v in vals)
+
+
 def build_mjcf(n_machines: int) -> str:
     """Return an MJCF string for a world with ``n_machines`` machine bodies."""
+    light_rgba = _rgba_str(STATE_LIGHT[MachineState.IDLE])  # initial color; mutated per state at runtime
+    part_rgba = _rgba_str(_PART_RGBA)
     bodies = []
     for i, (mx, my) in enumerate(_machine_positions(n_machines)):
         r, g, b = _MACHINE_COLORS[i % len(_MACHINE_COLORS)]
@@ -47,6 +63,10 @@ def build_mjcf(n_machines: int) -> str:
       <geom type="box" size="0.3 0.3 0.3" rgba="{r} {g} {b} 1"/>
       <geom name="door_{i}" type="box" pos="0 -0.31 -0.05" size="0.25 0.02 0.22"
             rgba="0.12 0.12 0.14 1"/>
+      <geom name="light_{i}" type="sphere" pos="0 -0.22 0.44" size="0.13"
+            contype="0" conaffinity="0" rgba="{light_rgba}"/>
+      <geom name="part_{i}" type="box" pos="0 -0.42 0.02" size="0.13 0.13 0.11"
+            contype="0" conaffinity="0" rgba="{part_rgba}"/>
     </body>"""
         )
     return f"""
@@ -96,6 +116,16 @@ class World:
         jids = [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, j) for j in base_joints]
         self._pose_adr = [int(self.model.jnt_qposadr[j]) for j in jids]
         self._dof_adr = [int(self.model.jnt_dofadr[j]) for j in jids]
+
+        # geom ids for each machine's status light and bed part (mutated to render visual state).
+        self._light_gid = [
+            mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f"light_{i}")
+            for i in range(self.n_machines)
+        ]
+        self._part_gid = [
+            mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f"part_{i}")
+            for i in range(self.n_machines)
+        ]
 
         # Seed-driven machine timings: deterministic, but varied so machines don't finish in lockstep.
         rng = np.random.default_rng(self.seed)
@@ -167,3 +197,41 @@ class World:
     def states(self) -> dict[str, MachineState]:
         """Ground-truth machine states keyed by name (the perception labels in Phase 4)."""
         return {m.name: m.state for m in self.machines}
+
+    # --- visuals & rendering (perception) ------------------------------------------------
+
+    def set_machine_visual(self, i: int, state: MachineState, part_present: bool) -> None:
+        """Set machine ``i``'s status-light color (from ``state``) and bed-part visibility.
+
+        Mutates ``model.geom_rgba`` so the next render reflects it. Used by the dataset generator to
+        place the scene in known ground-truth configs, and by :meth:`sync_visuals` for live render.
+        """
+        self.model.geom_rgba[self._light_gid[i], :3] = STATE_LIGHT[state]
+        self.model.geom_rgba[self._part_gid[i], 3] = 1.0 if part_present else 0.0
+
+    def sync_visuals(self) -> None:
+        """Drive every machine's visuals from its live FSM state (part present while running/done).
+
+        Note the asymmetry vs. the dataset: at serve time part-present is tied to state here, so live
+        configs (e.g. IDLE-with-part) are a *subset* of what the dataset trains on — harmless, and the
+        decorrelated training keeps the part head from collapsing into the state head.
+        """
+        for i, m in enumerate(self.machines):
+            self.set_machine_visual(i, m.state, m.state in (MachineState.RUNNING, MachineState.DONE))
+
+    def machine_camera(self, i: int, *, azimuth: float = 90.0, elevation: float = -12.0,
+                       distance: float = 1.6) -> mujoco.MjvCamera:
+        """A free camera framing machine ``i`` from the front (its door/light side)."""
+        mx, my = self.fixtures[f"machine_{i}"]
+        cam = mujoco.MjvCamera()
+        cam.lookat[:] = (mx, my - 0.1, 0.35)
+        cam.azimuth = azimuth
+        cam.elevation = elevation
+        cam.distance = distance
+        return cam
+
+    def render_machine(self, renderer: "mujoco.Renderer", i: int,
+                       camera: "mujoco.MjvCamera | None" = None) -> np.ndarray:
+        """Render machine ``i``'s close-up as an ``(H, W, 3)`` uint8 RGB frame."""
+        renderer.update_scene(self.data, camera if camera is not None else self.machine_camera(i))
+        return renderer.render()

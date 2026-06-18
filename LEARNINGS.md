@@ -27,6 +27,23 @@ Tests import the top-level `feathersim` package. Set `pythonpath = ["."]` in
 `[tool.pytest.ini_options]` so `pytest` from repo root puts the root on `sys.path` (avoids
 `ModuleNotFoundError` without needing an editable install or a root `conftest.py`).
 
+## 2026-06-18 — Perception gotchas (Phase 4): four things that bit me
+Building the auto-labeling + CNN pipeline surfaced four non-obvious failures, each fixed:
+1. **Global avg-pool washed out the small status light** → the state head collapsed to a constant
+   (acc 0.31, *below* the 0.38 baseline) while the larger bed-part head learned fine. Fix: a global
+   **max-pool** branch (concat with avg) preserves the localized light signal; also enlarged the light.
+   Lesson: for a small, localized cue, average pooling is the wrong inductive bias — use max.
+2. **No contrast = no signal.** The first bed part was whitish (0.80) against a whitish floor (0.82);
+   part acc stalled ~0.75. A vivid blue part (high contrast vs floor, dark door, and machine bodies)
+   jumped it to 1.0. Design the visual cue for contrast against *everything* it can sit in front of.
+3. **Train/serve mismatch.** Training rendered neighbors neutral but live `perceive`/`sync_visuals`
+   lights *all* machines; edge machines whose camera grazes a lit neighbor then read at ~chance
+   (conf 0.34). Fix: light every machine with an independent random config in the dataset and label
+   the centered target — train distribution now matches serving.
+4. **Visual-cue geoms are still collision geoms by default.** The new part geom protruded in front of
+   the machine and physically blocked the robot's tending approach (SDK drive stalled ~0.16 m short).
+   Fix: `contype="0" conaffinity="0"` on the light/part geoms — they're perception cues, not obstacles.
+
 ## 2026-06-18 — `python` ≠ `python3` here: deps live under `python3` only
 On this machine `python` → conda base (`/opt/anaconda3`, no project deps) while `python3` → the
 python.org framework build (`/Library/Frameworks/Python.framework/Versions/3.13`) where
