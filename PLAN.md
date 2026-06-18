@@ -64,15 +64,26 @@ strafe + rotation — within position/heading tolerance, and halts on arrival. G
 > softened, `BaseDriver` Protocol added for the sim seam). `DriveResult.steps` early-return vs.
 > timeout asymmetry is an intentional, tested choice.
 
-## Phase 3 — Skill SDK  `[ ]`
+## Phase 3 — Skill SDK  `[x]`
 
-**Acceptance:** a ~10-line script tends one machine end-to-end using only SDK calls.
+**Approach (confirmed):** a `Robot` facade wrapping a `World`, hiding joints/MJCF/kinematics. Parts
+are logical handoffs (no arm): `pick` unloads a `done` machine (FSM `reset`, which auto-reloads it),
+`place` deposits onto the output table. Skills enforce pre/postconditions and raise `SkillError`.
 
-- [ ] `robot.move_to(pose)` on top of go-to-pose
-- [ ] `robot.pick(part)` / `robot.place(target)`
-- [ ] `robot.tend(machine)` composing the above
-- [ ] Example script: tend one machine end-to-end
-- [ ] Tests: skill composition / pre + postconditions
+**Acceptance:** a ~10-line script tends one machine end-to-end using ONLY SDK calls; skills enforce
+pre/postconditions (raise on violation); tests cover composition + each pre/postcondition. Green.
+
+- [x] `sdk/robot.py`: `Robot` facade — `move_to(pose|fixture)` on go-to-pose; `wait_until_done`
+- [x] `pick(machine)` (precond: at machine + `done` + not holding) / `place(target)` (precond: holding)
+- [x] `tend(machine)` composing move→pick→move→place; `SkillError` on precondition violations
+- [x] `World`: `fixtures` (ground-truth positions) + `set_base_pose` (reset/teleport)
+- [x] `examples/tend_one_machine.py`: tend one machine end-to-end via the SDK only
+- [x] Tests: skill composition + every pre/postcondition
+
+> Reviewer: SHIP. MEDIUM (example leaked `world.machines[...]`, undercutting "SDK-only") fixed by
+> adding `Robot.machine_state` / `parts_done` accessors; LOWs addressed (off-contract target → clean
+> `SkillError`; typed `world` param; `tending_pose` y=0 fallback note). `place` explicit-pose path now
+> tested. 63 tests green.
 
 ## Phase 4 — Perception + auto-labeling  `[ ]`  ← checkpoint (metrics)
 

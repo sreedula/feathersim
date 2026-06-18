@@ -61,6 +61,24 @@ planar DOFs, so there's no tracking error or servo tuning to babysit at this pha
 fine for Phase-2 free-space navigation, but real obstacle avoidance / contact-aware motion is out of
 scope until (if) needed. Swapping to velocity actuators later is localized to `feathersim/sim/`.
 
+## 2026-06-18 — Skill SDK: a `Robot` facade with logical part handoffs
+**Decision:** The SDK is a `Robot` facade over `World` exposing `move_to / pick / place / tend`
+(+ `wait_until_done`, read accessors). With no arm in the sim, parts are **logical**: `pick` requires
+being parked at a `done` machine and not already holding, then calls the machine FSM's `reset`
+(which both unloads the finished part and reloads fresh stock, so the machine resumes cycling);
+`place` deposits the carried part onto the output table. Skills enforce preconditions and raise
+`SkillError`. Approach poses are derived from `World.fixtures` (ground-truth positions), so the SDK
+never touches joints/qpos/MJCF. `move_to`/`place` accept either a fixture name or an explicit pose.
+**Why:** The headline deliverable is a clean developer API that hides sim details, not a manipulation
+sim. Folding unload+reload into one `reset` matches a real machine-tender swapping parts in a single
+visit and keeps `tend` a single trip (go → unload → carry → place). Precondition checks make misuse
+loud instead of silently wrong, which the example and tests exercise.
+**Tradeoff:** No physical grasp/attachment, so `pick`/`place` can't fail for physical reasons (missed
+grasp, collision); they're state transitions gated on pose + machine state. Acceptable for the
+autonomy-loop goal; a physical gripper would be a later, sim-local change. The read accessors expose
+**ground-truth** machine state for scripting — the Phase-5 autonomy loop must instead consume
+perception, keeping ground-truth and perceived state separate (per the Phase-1 deferred note).
+
 ## 2026-06-18 — Three project subagents for the engineering loop
 **Decision:** Add `test-runner` (haiku), `reviewer` (sonnet), `docs-researcher` (sonnet) in
 `.claude/agents/`. The per-phase loop delegates testing and end-of-phase review to them.

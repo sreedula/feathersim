@@ -1,0 +1,169 @@
+"""Developer-facing skill SDK: a ``Robot`` facade over the sim. [Phase 3]
+
+Hides joints, MJCF, kinematics, and controller wiring behind four skills — ``move_to``, ``pick``,
+``place``, ``tend`` — plus a ``wait_until_done`` helper. Because the robot is a mobile base with no
+arm, parts are modeled as *logical* handoffs: ``pick`` unloads a ``done`` machine (which then
+auto-reloads and resumes its cycle) and ``place`` deposits the part onto the output table. Every
+skill checks its preconditions and raises :class:`SkillError` rather than doing something nonsensical.
+"""
+
+from __future__ import annotations
+
+import math
+from typing import TYPE_CHECKING
+
+from feathersim.control.go_to_pose import (
+    PoseGains,
+    PoseTolerance,
+    drive_to_pose,
+    pose_error,
+)
+from feathersim.kinematics.holonomic import MecanumGeometry
+from feathersim.sim.machine import MachineState
+
+if TYPE_CHECKING:
+    from feathersim.sim.world import World
+
+Pose = tuple[float, float, float]
+
+# How far in front of a fixture the base parks to service it (machine/robot half-extents + clearance).
+APPROACH_DISTANCE = 0.6
+# "At the fixture" slack — looser than the drive tolerance so arrival reliably counts as arrived.
+_AT_POSITION = 0.06
+_AT_HEADING = 0.15
+
+
+class SkillError(RuntimeError):
+    """Raised when a skill's precondition is not met (e.g. picking from a machine that isn't done)."""
+
+
+class Robot:
+    """High-level robot API. Wrap a :class:`feathersim.sim.world.World` and call skills on it."""
+
+    def __init__(
+        self,
+        world: World,
+        *,
+        gains: PoseGains = PoseGains(),
+        tolerance: PoseTolerance = PoseTolerance(),
+        geom: MecanumGeometry = MecanumGeometry(),
+    ) -> None:
+        self.world = world
+        self.gains = gains
+        self.tolerance = tolerance
+        self.geom = geom
+        self.holding: str | None = None      # name of the part currently carried, or None
+        self.delivered: list[str] = []        # parts placed on the table, in order
+
+    # --- introspection -------------------------------------------------------------------
+
+    @property
+    def pose(self) -> Pose:
+        """Current base pose ``(x, y, yaw)``."""
+        return self.world.robot_pose()
+
+    def machine_state(self, machine: str) -> MachineState:
+        """Ground-truth state of ``machine`` (for scripting/inspection; the autonomy loop will use
+        perception instead)."""
+        return self._machine(machine).state
+
+    def parts_done(self, machine: str) -> int:
+        """How many finished parts ``machine`` has had unloaded."""
+        return self._machine(machine).parts_done
+
+    def tending_pose(self, fixture: str) -> Pose:
+        """The pose at which the base services ``fixture`` (a machine name or ``"table"``)."""
+        fx, fy = self._fixture_xy(fixture)
+        # Approach from the origin side. Fixtures are laid out off the x-axis (machines +y, table −y);
+        # a fixture exactly at y=0 has no "origin side", so fall back to approaching from −y.
+        side = math.copysign(1.0, fy) if fy != 0.0 else 1.0
+        stand = (fx, fy - side * APPROACH_DISTANCE)
+        yaw = math.atan2(fy - stand[1], fx - stand[0])       # face the fixture
+        return (stand[0], stand[1], yaw)
+
+    # --- skills --------------------------------------------------------------------------
+
+    def move_to(self, target: str | Pose) -> None:
+        """Drive to ``target`` — a fixture name, ``"table"``, or an explicit ``(x, y, yaw)`` pose."""
+        goal = target if _is_pose(target) else self.tending_pose(target)  # type: ignore[arg-type]
+        result = drive_to_pose(
+            self.world, goal, gains=self.gains, tolerance=self.tolerance, geom=self.geom
+        )
+        if not result.reached:
+            raise SkillError(f"could not reach {target!r}: {result.position_error:.3f}m off")
+
+    def pick(self, machine: str) -> str:
+        """Unload the finished part from ``machine`` and carry it.
+
+        Preconditions: not already holding; parked at the machine; the machine is ``done``. The
+        machine then resets to ``idle`` (auto-reloaded with fresh stock) and resumes cycling.
+        Returns the part's name.
+        """
+        if self.holding is not None:
+            raise SkillError(f"already holding {self.holding!r}")
+        m = self._machine(machine)
+        if not self._at(self.tending_pose(machine)):
+            raise SkillError(f"not parked at {machine!r}; call move_to first")
+        if m.state is not MachineState.DONE:
+            raise SkillError(f"{machine!r} is {m.state.value}, not done")
+        part = f"part_{machine}_{m.parts_done}"
+        m.reset(self.world.time)  # unload finished part; machine reloads and restarts
+        self.holding = part
+        return part
+
+    def place(self, target: str | Pose = "table") -> str:
+        """Deposit the carried part at ``target`` (default the output table).
+
+        Precondition: parked at ``target`` and holding a part. Returns the deposited part's name.
+        """
+        if self.holding is None:
+            raise SkillError("not holding a part")
+        if not self._at(self.tending_pose(target) if isinstance(target, str) else target):
+            raise SkillError(f"not parked at {target!r}; call move_to first")
+        part, self.holding = self.holding, None
+        self.delivered.append(part)
+        return part
+
+    def tend(self, machine: str) -> str:
+        """Tend one machine end-to-end: go to it, unload the finished part, carry it to the table,
+        and place it. The machine must already be ``done`` (use :meth:`wait_until_done`). Returns
+        the delivered part's name."""
+        self.move_to(machine)
+        part = self.pick(machine)
+        self.move_to("table")
+        return self.place("table")
+
+    def wait_until_done(self, machine: str, *, timeout_s: float = 60.0) -> None:
+        """Step the world until ``machine`` reaches ``done``, or raise on timeout."""
+        m = self._machine(machine)
+        deadline = self.world.time + timeout_s
+        while m.state is not MachineState.DONE:
+            if self.world.time >= deadline:
+                raise SkillError(f"{machine!r} not done within {timeout_s:.0f}s (state={m.state.value})")
+            self.world.step()
+
+    # --- internals -----------------------------------------------------------------------
+
+    def _machine(self, name: str):
+        for m in self.world.machines:
+            if m.name == name:
+                return m
+        raise SkillError(f"unknown machine {name!r}")
+
+    def _fixture_xy(self, fixture: str) -> tuple[float, float]:
+        try:
+            return self.world.fixtures[fixture]
+        except (KeyError, TypeError):  # unknown name, or an off-contract unhashable target
+            raise SkillError(f"unknown fixture {fixture!r}") from None
+
+    def _at(self, pose: Pose) -> bool:
+        distance, heading = pose_error(self.world.robot_pose(), pose)
+        return distance <= _AT_POSITION and heading <= _AT_HEADING
+
+
+def _is_pose(target) -> bool:
+    return (
+        isinstance(target, tuple)
+        and len(target) == 3
+        and all(isinstance(v, (int, float)) for v in target)
+    )

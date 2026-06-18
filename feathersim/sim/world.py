@@ -21,16 +21,19 @@ from feathersim.sim.machine import Machine, MachineState
 
 TIMESTEP = 0.01  # sim seconds per step (100 Hz) — fine resolution, fast headless stepping
 
+MACHINE_Y = 1.5          # machines sit in a row at this y, doors facing the origin (−y)
+TABLE_XY = (0.0, -1.5)   # output/parts table, opposite the machines
+
 # Distinct machine colors (RGB 0–1) so renders/print output are easy to tell apart.
 _MACHINE_COLORS = [(0.85, 0.25, 0.25), (0.25, 0.65, 0.30), (0.90, 0.70, 0.20)]
 
 
 def _machine_positions(n: int) -> list[tuple[float, float]]:
-    """Lay ``n`` machines in a row along x at y=+1.5, facing the robot at the origin."""
+    """Lay ``n`` machines in a row along x at ``MACHINE_Y``, facing the robot at the origin."""
     if n == 1:
-        return [(0.0, 1.5)]
+        return [(0.0, MACHINE_Y)]
     xs = np.linspace(-1.0, 1.0, n)
-    return [(float(x), 1.5) for x in xs]
+    return [(float(x), MACHINE_Y) for x in xs]
 
 
 def build_mjcf(n_machines: int) -> str:
@@ -60,7 +63,7 @@ def build_mjcf(n_machines: int) -> str:
       <geom name="heading" type="box" pos="0.16 0 0.12" size="0.06 0.05 0.02"
             rgba="0.95 0.85 0.20 1"/>
     </body>
-    <body name="table" pos="0 -1.5 0.2">
+    <body name="table" pos="{TABLE_XY[0]} {TABLE_XY[1]} 0.2">
       <geom type="box" size="0.5 0.3 0.2" rgba="0.60 0.42 0.24 1"/>
     </body>{"".join(bodies)}
   </worldbody>
@@ -80,6 +83,7 @@ class World:
     model: mujoco.MjModel = field(init=False, repr=False)
     data: mujoco.MjData = field(init=False, repr=False)
     machines: list[Machine] = field(init=False)
+    fixtures: dict[str, tuple[float, float]] = field(init=False)
 
     def __post_init__(self) -> None:
         if not 1 <= self.n_machines <= 3:
@@ -103,6 +107,11 @@ class World:
             )
             for i in range(self.n_machines)
         ]
+
+        # Ground-truth world positions of the fixtures the SDK navigates to.
+        self.fixtures = {m.name: pos for m, pos in zip(self.machines, _machine_positions(self.n_machines))}
+        self.fixtures["table"] = TABLE_XY
+
         mujoco.mj_forward(self.model, self.data)
 
     @property
@@ -124,6 +133,15 @@ class World:
         """Return the base pose ``(x, y, yaw)`` from the planar joints."""
         x, y, yaw = (float(self.data.qpos[a]) for a in self._pose_adr)
         return (x, y, yaw)
+
+    def set_base_pose(self, x: float, y: float, yaw: float) -> None:
+        """Teleport the base to ``(x, y, yaw)`` and halt it (for resets / test setup)."""
+        ax, ay, ayaw = self._pose_adr
+        self.data.qpos[ax] = x
+        self.data.qpos[ay] = y
+        self.data.qpos[ayaw] = yaw
+        self.stop_base()
+        mujoco.mj_forward(self.model, self.data)
 
     def command_base_velocity(self, vx: float, vy: float, omega: float) -> None:
         """Command a body-frame twist (x-forward, y-left, omega CCW).
