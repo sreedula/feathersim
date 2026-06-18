@@ -142,14 +142,37 @@ logged. Green.
 > The demo (not the unit tests) caught a scheduler-fairness bug — confidence tie-break starved
 > `machine_0`; switched to oldest-waiting-first (even 2/2/2). See LEARNINGS.md.
 
-## Phase 6 — Teleop + dashboard  `[ ]`
+## Phase 6 — Teleop + dashboard  `[x]`
 
-**Acceptance:** watch the loop in a browser and seize manual control.
+**Approach (confirmed):** a `SimManager` owns the `World` + `Robot` + `Perception` and runs the sim on a
+single background thread (MuJoCo isn't thread-safe), so all stepping/rendering happens there and HTTP
+handlers only read a published snapshot (telemetry dict + latest JPEG) under a lock. Autonomy is
+re-expressed as a **tick-based, preemptible** state machine (`select → to_machine → pick → to_table →
+place`) reusing the pure `velocity_command` + SDK skills — so a teleop command can seize control
+mid-skill and resume on release. FastAPI server (`create_app`, exposes `app` for `make dashboard`):
+MJPEG camera feed, `/api/telemetry`, `/api/teleop` (seizes manual), `/api/mode` (resume auto). Single
+`static/index.html` with inline vanilla JS. `SimManager` takes injected perception + `render=False` so
+the control logic tests run headless; route tests use `TestClient`; the camera route is render-guarded.
 
-- [ ] FastAPI server: camera-feed endpoint + telemetry (per-machine state, parts done, uptime, current skill)
-- [ ] Single-file vanilla-JS UI
-- [ ] WASD/joystick manual override that preempts autonomy
-- [ ] `make dashboard` launches it
+**Acceptance:** open `make dashboard` in a browser, watch the autonomy loop run live (feed + per-machine
+telemetry + throughput/uptime), press WASD to seize manual control (autonomy pauses), release/Resume to
+hand back. Green.
+
+- [x] `World.overview_camera()` + `render()` (DRY with `render_machine`)
+- [x] `dashboard/sim_manager.py`: `SimManager` — threaded sim, AUTO/MANUAL modes, tick-based autonomy SM, telemetry snapshot, JPEG feed
+- [x] `dashboard/server.py`: `create_app` + routes (`/`, `/api/telemetry`, `/api/teleop`, `/api/mode`, MJPEG `/api/camera`)
+- [x] `dashboard/static/index.html`: single-file UI — live feed, machine cards, WASD teleop, mode toggle
+- [x] `make dashboard` launches it (uvicorn `...:app`)
+- [x] Tests: SimManager autonomy tends via perceived state; teleop preempts autonomy; mode resume; telemetry shape; routes via TestClient
+
+> Reviewer: SHIP (no CRITICAL/HIGH). Thread-safety verified — only `_mode`/`_teleop`/`_snapshot`/`_frame`
+> cross threads, all behind the lock; no HTTP-thread sim/renderer access; preempt-and-resume genuinely
+> holds (pick/place atomic per tick, held part survives via `robot.holding`, stale pick fails cleanly to
+> `select`). Addressed in-phase: `stop()` warns on join timeout; MJPEG generator loops on `is_running()`
+> so shutdown ends it; dropped `--reload` (stateful in-process sim); teleop clamps resultant speed (vector
+> magnitude), not per-axis; throughput-over-total-sim-time documented. Deferred LOW: backgrounded-tab still
+> drives the 20fps render loop (no `visibilitychange` teardown); `_skill_text`/`_target_machine` coupling
+> is documented-only (no live bug). The GL-thread-affinity render bug is logged in LEARNINGS.md.
 
 ## Definition of done
 

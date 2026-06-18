@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FeatherSim — Fleet Dashboard</title>
+<style>
+  :root {
+    --bg: #0e1117; --panel: #161b22; --line: #283039; --text: #e6edf3; --muted: #8b949e;
+    --idle: #8b949e; --running: #f0a020; --done: #2ecc55; --accent: #4493f8; --warn: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 -apple-system, system-ui, "Segoe UI", sans-serif;
+         background: var(--bg); color: var(--text); }
+  header { padding: 14px 22px; border-bottom: 1px solid var(--line); display: flex;
+           align-items: baseline; gap: 14px; }
+  header h1 { font-size: 17px; margin: 0; letter-spacing: .3px; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  .wrap { display: grid; grid-template-columns: minmax(0,1.4fr) minmax(320px,1fr); gap: 18px;
+          padding: 18px 22px; align-items: start; }
+  @media (max-width: 860px) { .wrap { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted);
+              margin: 0 0 10px; font-weight: 600; }
+  #feed { width: 100%; border-radius: 8px; display: block; background: #000; aspect-ratio: 1/1; object-fit: cover; }
+  .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 16px; margin-top: 12px; }
+  .stat { display: flex; justify-content: space-between; border-bottom: 1px dashed var(--line); padding-bottom: 4px; }
+  .stat b { color: var(--muted); font-weight: 500; }
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .badge.auto { background: rgba(68,147,248,.18); color: var(--accent); }
+  .badge.manual { background: rgba(248,81,73,.18); color: var(--warn); }
+  .machine { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+  .machine .row { display: flex; justify-content: space-between; align-items: center; }
+  .machine .name { font-weight: 600; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: middle; }
+  .machine .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .pill { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); }
+  .teleop { margin-top: 4px; }
+  .keys { display: grid; grid-template-columns: repeat(3, 46px); grid-gap: 6px; justify-content: center; margin: 10px 0; }
+  .key { height: 40px; display: flex; align-items: center; justify-content: center; background: #0d1117;
+         border: 1px solid var(--line); border-radius: 7px; font-weight: 600; color: var(--muted); user-select: none; }
+  .key.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .key.blank { visibility: hidden; }
+  button { font: inherit; font-weight: 600; cursor: pointer; border-radius: 8px; padding: 9px 14px;
+           border: 1px solid var(--line); background: #21262d; color: var(--text); width: 100%; }
+  button.resume { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  .hint { color: var(--muted); font-size: 12px; text-align: center; margin-top: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>FeatherSim</h1>
+  <span class="sub">machine-tending autonomy · live teleop &amp; telemetry</span>
+</header>
+
+<div class="wrap">
+  <div class="panel">
+    <h2>Camera — overhead</h2>
+    <img id="feed" src="/api/camera" alt="live camera feed"
+         onerror="this.style.opacity=.3" />
+    <div class="stats">
+      <div class="stat"><b>Mode</b> <span id="mode" class="badge auto">auto</span></div>
+      <div class="stat"><b>Current skill</b> <span id="skill">—</span></div>
+      <div class="stat"><b>Uptime</b> <span id="uptime">0s</span></div>
+      <div class="stat"><b>Parts delivered</b> <span id="delivered">0</span></div>
+      <div class="stat"><b>Throughput</b> <span id="throughput">0/min</span></div>
+      <div class="stat"><b>Holding</b> <span id="holding">—</span></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="panel" style="margin-bottom:18px;">
+      <h2>Machines</h2>
+      <div id="machines"></div>
+    </div>
+
+    <div class="panel teleop">
+      <h2>Teleop override</h2>
+      <div class="keys">
+        <div class="key blank"></div><div class="key" data-k="w">W</div><div class="key blank"></div>
+        <div class="key" data-k="a">A</div><div class="key" data-k="s">S</div><div class="key" data-k="d">D</div>
+        <div class="key" data-k="q">Q</div><div class="key blank"></div><div class="key" data-k="e">E</div>
+      </div>
+      <button id="resume" class="resume" disabled>Resume autonomy</button>
+      <div class="hint">W/S forward·back · A/D strafe · Q/E rotate — any key seizes control</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const V = 0.8, OMEGA = 1.5;                         // teleop speeds (m/s, rad/s)
+const STATE_COLOR = { idle: "var(--idle)", running: "var(--running)", done: "var(--done)" };
+const pressed = new Set();
+const KEYS = ["w", "a", "s", "d", "q", "e"];
+
+function twistFromKeys() {
+  let vx = 0, vy = 0, omega = 0;
+  if (pressed.has("w")) vx += V;
+  if (pressed.has("s")) vx -= V;
+  if (pressed.has("a")) vy += V;          // body y is left
+  if (pressed.has("d")) vy -= V;
+  if (pressed.has("q")) omega += OMEGA;   // CCW
+  if (pressed.has("e")) omega -= OMEGA;
+  return { vx, vy, omega };
+}
+
+async function post(url, body) {
+  try { await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
+                           body: JSON.stringify(body) }); } catch (e) {}
+}
+
+function sendTeleop() {
+  post("/api/teleop", twistFromKeys());
+  for (const k of KEYS) document.querySelector(`.key[data-k="${k}"]`).classList.toggle("on", pressed.has(k));
+}
+
+document.addEventListener("keydown", (e) => {
+  const k = e.key.toLowerCase();
+  if (!KEYS.includes(k) || e.repeat) return;
+  e.preventDefault(); pressed.add(k); sendTeleop();
+});
+document.addEventListener("keyup", (e) => {
+  const k = e.key.toLowerCase();
+  if (!KEYS.includes(k)) return;
+  pressed.delete(k); sendTeleop();
+});
+document.getElementById("resume").addEventListener("click", () => {
+  pressed.clear();
+  for (const k of KEYS) document.querySelector(`.key[data-k="${k}"]`).classList.remove("on");
+  post("/api/mode", { mode: "auto" });
+});
+
+function renderMachines(machines) {
+  document.getElementById("machines").innerHTML = machines.map((m) => {
+    const color = STATE_COLOR[m.state] || "var(--muted)";
+    const perceived = m.perceived
+      ? `perceived <b style="color:${STATE_COLOR[m.perceived] || "var(--muted)"}">${m.perceived}</b>` +
+        (m.confidence != null ? ` (${Math.round(m.confidence * 100)}%)` : "")
+      : "perceived —";
+    return `<div class="machine">
+        <div class="row">
+          <span class="name"><span class="dot" style="background:${color}"></span>${m.name}</span>
+          <span class="pill">${m.parts_done} done</span>
+        </div>
+        <div class="meta">state <b style="color:${color}">${m.state}</b> · ${perceived}</div>
+      </div>`;
+  }).join("");
+}
+
+async function poll() {
+  try {
+    const t = await (await fetch("/api/telemetry")).json();
+    const modeEl = document.getElementById("mode");
+    modeEl.textContent = t.mode;
+    modeEl.className = "badge " + t.mode;
+    document.getElementById("skill").textContent = t.skill;
+    document.getElementById("uptime").textContent = t.sim_time + "s";
+    document.getElementById("delivered").textContent = t.delivered;
+    document.getElementById("throughput").textContent = t.throughput_per_min + "/min";
+    document.getElementById("holding").textContent = t.holding || "—";
+    document.getElementById("resume").disabled = t.mode !== "manual";
+    renderMachines(t.machines);
+  } catch (e) {}
+}
+setInterval(poll, 400);
+poll();
+</script>
+</body>
+</html>

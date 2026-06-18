@@ -125,6 +125,27 @@ perception misread, so an unattended run would silently lose throughput instead 
 subclassing keeps every existing `pytest.raises(SkillError)` valid (Precondition *is* a SkillError).
 **Tradeoff:** A little more error surface; worth it for the loud-failure guarantee on the headline loop.
 
+## 2026-06-18 — Dashboard: one sim thread, snapshot-publishing, tick-based preemptible autonomy
+**Decision:** The dashboard's `SimManager` owns the `World`/`Robot`/`Perception` and runs the sim on a
+**single background thread**. That thread does *all* stepping, perception, and rendering; HTTP handlers
+never touch MuJoCo — the thread publishes a telemetry dict + the latest camera JPEG under a lock, and
+handlers read those. Autonomy is re-expressed as a **tick-based state machine** (`select → to_machine →
+pick → to_table → place`, reusing the pure `velocity_command` + SDK skills) instead of the blocking
+Phase-5 `run_autonomy`, so each tick can instead apply an operator twist when the mode is MANUAL —
+teleop preempts mid-skill and the SM state survives the interlude (resume = hand back). FastAPI
+(`create_app` + lifespan starts/stops the manager); MJPEG `/api/camera`, `/api/telemetry`,
+`/api/teleop` (seizes manual), `/api/mode` (resume auto); one static `index.html` with vanilla JS.
+**Why:** `MjModel`/`MjData` aren't thread-safe, so confining every sim touch to one thread (handlers read
+snapshots) is the simplest correct concurrency model — no locks around the physics, just around the two
+published artifacts. A tick SM is the minimal change that makes autonomy *interruptible* at fine grain
+(the blocking `tend` could only be preempted at trip boundaries). Selection still consumes only
+perception, preserving the perceived/ground-truth split end-to-end into the UI.
+**Tradeoff:** The tick SM duplicates the *sequencing* of `Robot.tend` (though not the primitives), so the
+tend recipe now lives in two places — acceptable, and the SDK skills/preconditions remain the single
+source of truth for each step. GL contexts are thread-affine (macOS), so renderers must be created and
+closed *on the sim thread* (in `_run`), not in `__init__` — a real bug that cost a debugging round.
+Throughput is reported over total sim time (manual override counts against the rate).
+
 ## 2026-06-18 — Three project subagents for the engineering loop
 **Decision:** Add `test-runner` (haiku), `reviewer` (sonnet), `docs-researcher` (sonnet) in
 `.claude/agents/`. The per-phase loop delegates testing and end-of-phase review to them.

@@ -63,6 +63,26 @@ even `2/2/2`. Lessons: (1) a green unit suite doesn't prove the *emergent* behav
 the actual demo and eyeball the distribution, not just the total; (2) when one component looks guilty
 (perception), cheaply falsify that hypothesis before "fixing" it — the bug was in the scheduler.
 
+## 2026-06-18 — MuJoCo GL contexts are thread-affine: create the renderer on the thread that renders (Phase 6)
+The dashboard runs the sim on a background thread. I first built the `mujoco.Renderer`s in
+`SimManager.__init__` (the main/caller thread) but called `.render()` from the sim thread — and
+`manager.frame()` stayed `None` forever (the daemon thread silently died). On macOS the renderer's GL
+context is bound to the thread that *created* it; rendering from another thread fails. Fix: create the
+renderers at the top of `_run()` (on the sim thread) and close them there in a `finally` — never in
+`__init__`/`stop()`. Corollary: a wedged sim thread can't have its renderers closed from `stop()` either
+(same affinity), so `stop()` just warns if the join times out. On headless Linux/CI the same code needs
+`MUJOCO_GL=egl`. This is the Phase-4 "headless render needs a GL context" note, now with a threading twist.
+
+## 2026-06-18 — An endless MJPEG generator hangs FastAPI's TestClient (Phase 6)
+Consuming the `multipart/x-mixed-replace` camera stream through `TestClient.stream(...)` and `break`-ing
+out hung the whole test run (had to SIGKILL; exit 144). The server-side generator is `while True: … sleep`,
+and the test transport doesn't simulate a browser disconnect, so it never stops pulling / tearing down.
+Two fixes: (1) test the generator function directly (`next(gen)`; `gen.close()`) and the manager's
+`frame()` rather than driving the infinite stream through TestClient; (2) make the generator loop on
+`manager.is_running()` so real shutdown ends it cleanly (in production Starlette stops pulling it on
+disconnect, but don't rely on that for the stop path). Lesson: never drive an unbounded streaming
+response through TestClient — exercise the generator in isolation.
+
 ## 2026-06-18 — Subagents load at session start
 Files added to `.claude/agents/` are NOT available mid-session — they're read when the session
 starts. After creating/editing them, restart Claude Code (or add via `/agents`) before trying to

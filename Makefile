@@ -9,8 +9,9 @@ test:
 demo:
 	python3 -m feathersim.demo
 
+# No --reload: the sim is a stateful in-process thread; a reload would reset the running demo.
 dashboard:
-	python3 -m uvicorn feathersim.dashboard.server:app --reload
+	python3 -m uvicorn feathersim.dashboard.server:app --port 8000
 
 train:
 	python3 -m feathersim.perception.train

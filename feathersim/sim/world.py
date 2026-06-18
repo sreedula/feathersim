@@ -230,8 +230,22 @@ class World:
         cam.distance = distance
         return cam
 
+    def overview_camera(self, *, azimuth: float = 90.0, elevation: float = -40.0,
+                        distance: float = 5.5) -> mujoco.MjvCamera:
+        """A free camera framing the whole cell (machines, table, robot) for the dashboard feed."""
+        cam = mujoco.MjvCamera()
+        cam.lookat[:] = (0.0, 0.0, 0.2)
+        cam.azimuth = azimuth
+        cam.elevation = elevation
+        cam.distance = distance
+        return cam
+
+    def render(self, renderer: "mujoco.Renderer", camera: "mujoco.MjvCamera") -> np.ndarray:
+        """Render the scene from ``camera`` as an ``(H, W, 3)`` uint8 RGB frame."""
+        renderer.update_scene(self.data, camera)
+        return renderer.render()
+
     def render_machine(self, renderer: "mujoco.Renderer", i: int,
                        camera: "mujoco.MjvCamera | None" = None) -> np.ndarray:
         """Render machine ``i``'s close-up as an ``(H, W, 3)`` uint8 RGB frame."""
-        renderer.update_scene(self.data, camera if camera is not None else self.machine_camera(i))
-        return renderer.render()
+        return self.render(renderer, camera if camera is not None else self.machine_camera(i))
