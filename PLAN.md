@@ -7,7 +7,7 @@ Legend: `[ ]` todo · `[x]` done · `[~]` in progress
 
 ---
 
-## Phase 0 — Scaffold, subagents & loop setup  `[~]`
+## Phase 0 — Scaffold, subagents & loop setup  `[x]`
 
 **Acceptance:** `pytest` runs green (≥1 trivial test); the four engineering docs exist; the three
 subagent files in `.claude/agents/` are valid; a single-command launch (`make demo`) and test
@@ -20,19 +20,25 @@ runner (`make test`) work; git initialized.
 - [x] `python -m feathersim.demo` runs
 - [x] `git init` + first commit
 - [x] Subagents: `.claude/agents/{reviewer,test-runner,docs-researcher}.md`
-- [ ] **Checkpoint: show structure, plan & subagents, then STOP — user restarts so agents load before Phase 1**
+- [x] **Checkpoint: show structure, plan & subagents, then STOP — user restarts so agents load before Phase 1**
 
-## Phase 1 — Sim world  `[ ]`
+## Phase 1 — Sim world  `[x]`
 
-**Acceptance:** headless PyBullet sim steps deterministically; 2–3 machines cycle
-`idle→running→done` on a timer; `scripts/print_state.py` prints ground-truth state each tick.
+**Acceptance:** a headless MuJoCo world (floor, holonomic robot base, parts table, 2–3 machines)
+steps deterministically — same seed → identical state trace; each machine runs a pure, timer-driven
+FSM `idle→running→done` (+ `reset` on unload); `scripts/print_state.py` prints per-tick ground truth
+(sim time, each machine's state, robot pose). Tests cover the pure FSM and sim determinism — green.
 
-- [ ] PyBullet world: floor, holonomic robot base, parts table
-- [ ] 2–3 machine bodies, each with a door + `MachineState` (idle/running/done)
-- [ ] Machine state machine on a timer (pure, unit-testable)
-- [ ] Headless `step()` loop; deterministic seeding
-- [ ] `scripts/print_state.py` prints per-tick ground truth
-- [ ] Tests: machine state transitions
+- [x] MJCF world: floor, holonomic robot base (planar x/y/yaw joints), parts table
+- [x] 2–3 machine bodies, each with a door geom + `MachineState` (idle/running/done)
+- [x] Pure, unit-testable timer FSM (`feathersim/sim/machine.py`), no MuJoCo import
+- [x] `World.step()` advances physics + ticks FSMs; deterministic `seed`
+- [x] `scripts/print_state.py` prints per-tick ground truth
+- [x] Tests: FSM transitions (pure) + sim determinism (same seed → same trace)
+
+> Deferred (reviewer LOW, none blocking): in Phase 2 assert base motion *under* a control input
+> (the Phase-1 "stays at origin" test can't fail by construction); keep `states()` ground-truth vs.
+> Phase-4 perceived state explicitly separated.
 
 ## Phase 2 — Holonomic motion  `[ ]`  ← checkpoint (confirm kinematics)
 

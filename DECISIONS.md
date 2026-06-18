@@ -8,12 +8,25 @@ Architecture decision log. Each entry: date, decision, why, tradeoff.
 `CLAUDE.md` and history. Mixing a Python robotics stack in would collide and confuse.
 **Tradeoff:** Two repos to manage vs. one; chosen for clean isolation.
 
-## 2026-06-18 — PyBullet for simulation
+## 2026-06-18 — ~~PyBullet for simulation~~ (SUPERSEDED, same day — see below)
 **Decision:** PyBullet over MuJoCo for the sim world.
 **Why:** Fast iteration, trivial install, easy headless stepping and synthetic camera rendering
 (`getCameraImage`) for the auto-labeling pipeline; ample examples.
 **Tradeoff:** Less contact-accurate than MuJoCo, but machine-tending here is coarse pick/place +
 base navigation, so fidelity is sufficient.
+**Superseded by the MuJoCo decision below:** the "trivial install" premise failed on this machine.
+
+## 2026-06-18 — MuJoCo for simulation (reverses the PyBullet decision above)
+**Decision:** MuJoCo, not PyBullet, for the sim world.
+**Why:** PyBullet was chosen *for* trivial install + headless camera rendering. On this machine
+(macOS, Apple clang 17, framework Python 3.13) PyBullet ships no wheels and its source build fails:
+its vendored zlib collides with the new macOS SDK's `_stdio.h` (`NULL`/`ZEXPORT` token errors).
+So the premise no longer holds here. MuJoCo's official wheels install in seconds with no compiler,
+support Python 3.13 on arm64, step deterministically headless, and render offscreen camera frames
+(`mujoco.Renderer`) — exactly what the auto-labeling pipeline needs. Verified all three before switching.
+**Tradeoff:** Worlds are authored in MJCF instead of URDF and the API differs from PyBullet; the
+kinematics/perception/SDK/autonomy layers are sim-agnostic by design (sim state injected at the edges),
+so the blast radius is confined to `feathersim/sim/`.
 
 ## 2026-06-18 — Kinematics & perception logic as pure functions
 **Decision:** Drive kinematics and perception decision logic live in pure functions with no sim
