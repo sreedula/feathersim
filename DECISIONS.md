@@ -46,6 +46,21 @@ A small CNN trains fast on sim data and is easy to evaluate against a baseline.
 **Why:** No build step, minimal deps, easy to demo; matches the "single-file frontend" guidance.
 **Tradeoff:** Not a rich SPA; fine for a demo dashboard.
 
+## 2026-06-18 — Mecanum drive, with control routed through wheel space; kinematic base velocity
+**Decision:** The holonomic base is a 4-wheel **mecanum** drive. The go-to-pose loop computes a
+body twist, passes it through the mecanum inverse kinematics (twist → wheel speeds) **and back out**
+through the forward kinematics every tick, then commands the sim base. The sim base itself is driven
+by **kinematic velocity control**: write the planar-joint velocities (`qvel`), then `mj_step`.
+**Why:** Routing through IK→FK makes the wheel kinematics genuinely load-bearing (a bug in either
+breaks pose-reaching), not decorative — while the FK is the exact inverse of the IK, so the
+round-trip is identity and adds no error. Mecanum gives true holonomy (independent x/y/yaw) with a
+clean, orthogonal-column kinematic matrix that's easy to verify. Kinematic `qvel` control is exact
+and deterministic here because the base has no actuators, joint damping, or gravity component on its
+planar DOFs, so there's no tracking error or servo tuning to babysit at this phase.
+**Tradeoff:** Kinematic control ignores contact forces, so the base will drive *through* obstacles —
+fine for Phase-2 free-space navigation, but real obstacle avoidance / contact-aware motion is out of
+scope until (if) needed. Swapping to velocity actuators later is localized to `feathersim/sim/`.
+
 ## 2026-06-18 — Three project subagents for the engineering loop
 **Decision:** Add `test-runner` (haiku), `reviewer` (sonnet), `docs-researcher` (sonnet) in
 `.claude/agents/`. The per-phase loop delegates testing and end-of-phase review to them.

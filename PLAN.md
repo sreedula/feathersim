@@ -40,16 +40,29 @@ FSM `idle→running→done` (+ `reset` on unload); `scripts/print_state.py` prin
 > (the Phase-1 "stays at origin" test can't fail by construction); keep `states()` ground-truth vs.
 > Phase-4 perceived state explicitly separated.
 
-## Phase 2 — Holonomic motion  `[ ]`  ← checkpoint (confirm kinematics)
+## Phase 2 — Holonomic motion  `[x]`  ← checkpoint (confirm kinematics)
 
-**Acceptance:** unit tests on the kinematics math pass; robot reaches a commanded floor pose
-within tolerance in sim.
+**Approach (confirmed):** 4-wheel **mecanum** base. Pure inverse/forward kinematics; the control
+loop routes the commanded body twist *through* wheel space (IK→FK) each tick so the wheel math is
+load-bearing, then drives the sim base's planar joints. Idealized base (kinematic velocity control,
+no contact/obstacle avoidance) — fine for free-space navigation.
 
-- [ ] `holonomic.py`: body velocity (vx, vy, ω) → wheel commands (pure functions)
-- [ ] Inverse + forward kinematics; round-trip tests
-- [ ] `go_to_pose.py`: controller drives base to target (x, y, θ)
-- [ ] Sim test: reaches pose within position/heading tolerance
-- [ ] **Checkpoint: confirm kinematics approach**
+**Acceptance:** pure unit tests on the mecanum math pass (incl. body→wheels→body round-trip is
+identity); a P-controller drives the sim base from the origin to a commanded `(x, y, θ)` — including
+strafe + rotation — within position/heading tolerance, and halts on arrival. Green.
+
+- [x] `kinematics/holonomic.py`: `MecanumGeometry`, `body_to_wheels` (vx,vy,ω → 4 wheel speeds),
+      `wheels_to_body` (FK) — pure, no sim import
+- [x] Inverse + forward kinematics; body→wheels→body round-trip tests
+- [x] `control/go_to_pose.py`: pure `velocity_command` (world error → body twist, clamped) +
+      `drive_to_pose(world, target)` sim driver routing through the mecanum IK/FK
+- [x] `World.command_base_velocity` (body twist → world-frame joint velocities) + `stop_base`
+- [x] Sim test: reaches pose within position/heading tolerance; base halts after arrival
+- [x] **Checkpoint: confirm kinematics approach** — mecanum, confirmed with user
+
+> Reviewer: SHIP, all findings LOW and addressed in-phase (dead line removed, `wrap_to_pi` docstring
+> softened, `BaseDriver` Protocol added for the sim seam). `DriveResult.steps` early-return vs.
+> timeout asymmetry is an intentional, tested choice.
 
 ## Phase 3 — Skill SDK  `[ ]`
 

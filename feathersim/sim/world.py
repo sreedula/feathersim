@@ -4,12 +4,14 @@ Builds an MJCF model programmatically (so machine count is configurable), wraps 
 ``MjData``, and ticks the pure machine FSMs each physics step. Headless and deterministic given a
 seed: the seed assigns each machine its idle/cycle durations, so same seed → identical state trace.
 
-The robot base has planar x/y/yaw joints but is unactuated in Phase 1 (it just sits at the origin);
-Phase 2 wires holonomic control onto those joints.
+The robot base has planar x/y/yaw joints. Phase 2 drives them via :meth:`World.command_base_velocity`
+(kinematic velocity control: write the base joint velocities, then step). Unactuated, the base stays
+put.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 import mujoco
@@ -85,11 +87,11 @@ class World:
         self.model = mujoco.MjModel.from_xml_string(build_mjcf(self.n_machines))
         self.data = mujoco.MjData(self.model)
 
-        # qpos addresses for the base joints — read by robot_pose() without assuming layout.
-        self._pose_adr = [
-            int(self.model.jnt_qposadr[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, j)])
-            for j in ("base_x", "base_y", "base_yaw")
-        ]
+        # qpos / qvel (dof) addresses for the base joints — looked up by name, no layout assumption.
+        base_joints = ("base_x", "base_y", "base_yaw")
+        jids = [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, j) for j in base_joints]
+        self._pose_adr = [int(self.model.jnt_qposadr[j]) for j in jids]
+        self._dof_adr = [int(self.model.jnt_dofadr[j]) for j in jids]
 
         # Seed-driven machine timings: deterministic, but varied so machines don't finish in lockstep.
         rng = np.random.default_rng(self.seed)
@@ -122,6 +124,27 @@ class World:
         """Return the base pose ``(x, y, yaw)`` from the planar joints."""
         x, y, yaw = (float(self.data.qpos[a]) for a in self._pose_adr)
         return (x, y, yaw)
+
+    def command_base_velocity(self, vx: float, vy: float, omega: float) -> None:
+        """Command a body-frame twist (x-forward, y-left, omega CCW).
+
+        Converts to world-frame joint velocities using the current yaw and writes them to the base
+        DOFs; the next :meth:`step` integrates the motion. Kinematic control — it does not respect
+        contacts, so it's for free-space navigation only.
+        """
+        _, _, yaw = self.robot_pose()
+        c, s = math.cos(yaw), math.sin(yaw)
+        world_vx = c * vx - s * vy
+        world_vy = s * vx + c * vy
+        ax, ay, ayaw = self._dof_adr
+        self.data.qvel[ax] = world_vx
+        self.data.qvel[ay] = world_vy
+        self.data.qvel[ayaw] = omega
+
+    def stop_base(self) -> None:
+        """Zero the base joint velocities (halt)."""
+        for a in self._dof_adr:
+            self.data.qvel[a] = 0.0
 
     def states(self) -> dict[str, MachineState]:
         """Ground-truth machine states keyed by name (the perception labels in Phase 4)."""
