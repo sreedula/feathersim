@@ -37,12 +37,30 @@ make dashboard   # launch FastAPI teleop/telemetry UI
 make train       # train the perception model on auto-labeled sim data
 ```
 
+## Subagents (project, in `.claude/agents/`)
+
+Use for context hygiene and fresh-perspective review. The main thread still owns architecture
+and implementation — do NOT over-delegate. Include file paths, the relevant acceptance criteria,
+and any error text in the delegation prompt (subagents start with a fresh context).
+
+- **`test-runner`** (haiku) — run pytest after any change; returns only pass/fail + concise
+  tracebacks. Keeps verbose output out of the main thread.
+- **`reviewer`** (sonnet) — read-only senior review at the end of every phase, after green and
+  before commit. Returns prioritized findings + SHIP/NEEDS WORK. Address CRITICAL/HIGH before
+  proceeding; log deferred MEDIUM/LOW in `PLAN.md`.
+- **`docs-researcher`** (sonnet) — exact API signatures + minimal snippet for PyBullet / MuJoCo /
+  PyTorch / FastAPI. Use instead of guessing unfamiliar APIs.
+- **`Explore`** (built-in) — read-only codebase search; use instead of dumping files into the thread.
+
+> Agent files load at session start. After editing `.claude/agents/`, restart the session
+> (or create them via `/agents`) before delegating.
+
 ## The engineering loop (mandatory, every phase)
 
 1. Refine acceptance criteria in `PLAN.md`.
-2. Implement the smallest vertical slice that satisfies them.
-3. Write tests, run them. Red blocks progress.
-4. Self-review against acceptance criteria **and** `LEARNINGS.md`.
+2. Implement the smallest vertical slice that satisfies them (use `docs-researcher` for unfamiliar APIs).
+3. Delegate to **`test-runner`**. Nothing advances on red — fix until green.
+4. Delegate to **`reviewer`**. Address every CRITICAL/HIGH finding; note deferred MEDIUM/LOW in `PLAN.md`.
 5. Update `DECISIONS.md` / `LEARNINGS.md`.
 6. Commit. Tick `PLAN.md` checkboxes.
 7. Next phase.

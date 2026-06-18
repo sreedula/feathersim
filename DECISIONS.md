@@ -32,3 +32,12 @@ A small CNN trains fast on sim data and is easy to evaluate against a baseline.
 **Decision:** FastAPI backend, one static `index.html` with vanilla JS for feed/teleop/telemetry.
 **Why:** No build step, minimal deps, easy to demo; matches the "single-file frontend" guidance.
 **Tradeoff:** Not a rich SPA; fine for a demo dashboard.
+
+## 2026-06-18 — Three project subagents for the engineering loop
+**Decision:** Add `test-runner` (haiku), `reviewer` (sonnet), `docs-researcher` (sonnet) in
+`.claude/agents/`. The per-phase loop delegates testing and end-of-phase review to them.
+**Why:** Context hygiene (keep verbose pytest output and API lookups out of the main thread) and
+a fresh-perspective review pass that drives elegance. The main thread keeps ownership of
+architecture and implementation.
+**Tradeoff:** Slight coordination overhead and a required session restart to load the agents;
+worth it for cleaner context and an independent review gate.

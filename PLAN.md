@@ -7,18 +7,20 @@ Legend: `[ ]` todo · `[x]` done · `[~]` in progress
 
 ---
 
-## Phase 0 — Scaffold & loop setup  `[~]`
+## Phase 0 — Scaffold, subagents & loop setup  `[~]`
 
-**Acceptance:** `pytest` runs green (≥1 trivial test); the four engineering docs exist; a
-single-command launch (`make demo`) and test runner (`make test`) work; git initialized.
+**Acceptance:** `pytest` runs green (≥1 trivial test); the four engineering docs exist; the three
+subagent files in `.claude/agents/` are valid; a single-command launch (`make demo`) and test
+runner (`make test`) work; git initialized.
 
 - [x] Repo structure (package + subpackages + tests)
 - [x] `CLAUDE.md`, `PLAN.md`, `DECISIONS.md`, `LEARNINGS.md`
 - [x] `requirements.txt`, `pyproject.toml`, `Makefile`, `.gitignore`, `README.md`
 - [x] Trivial passing test (`tests/test_smoke.py`)
 - [x] `python -m feathersim.demo` runs
-- [ ] `git init` + first commit
-- [ ] **Checkpoint: show structure & plan, await go-ahead before features**
+- [x] `git init` + first commit
+- [x] Subagents: `.claude/agents/{reviewer,test-runner,docs-researcher}.md`
+- [ ] **Checkpoint: show structure, plan & subagents, then STOP — user restarts so agents load before Phase 1**
 
 ## Phase 1 — Sim world  `[ ]`
 

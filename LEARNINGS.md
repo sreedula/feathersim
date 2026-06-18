@@ -15,3 +15,9 @@ compatible Python via a venv. Don't assume the install is clean. [resolve in Pha
 Tests import the top-level `feathersim` package. Set `pythonpath = ["."]` in
 `[tool.pytest.ini_options]` so `pytest` from repo root puts the root on `sys.path` (avoids
 `ModuleNotFoundError` without needing an editable install or a root `conftest.py`).
+
+## 2026-06-18 — Subagents load at session start
+Files added to `.claude/agents/` are NOT available mid-session — they're read when the session
+starts. After creating/editing them, restart Claude Code (or add via `/agents`) before trying to
+delegate, or the Agent call won't find the custom agent. This is why Phase 0 ends with a
+mandatory restart before Phase 1.
