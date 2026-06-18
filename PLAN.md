@@ -176,6 +176,10 @@ hand back. Green.
 
 ## Definition of done
 
-- [ ] `README.md` with an autonomy-loop GIF + one-command launch
-- [ ] All tests green
-- [ ] Four engineering docs filled in
+- [x] `README.md` with an autonomy-loop GIF + one-command launch (`scripts/record_gif.py` → `docs/autonomy.gif`)
+- [x] All tests green (94 passing)
+- [x] Four engineering docs filled in
+
+**Project complete.** Phases 0–6 shipped; the walking skeleton is a full machine-tending autonomy stack
+— sim → mecanum kinematics → go-to-pose control → skill SDK → auto-labeled perception (state acc 1.0 vs
+0.39 baseline) → unattended autonomy loop → browser teleop/telemetry dashboard.
