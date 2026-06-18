@@ -1,0 +1,15 @@
+# Simulation
+pybullet>=3.2.6
+numpy>=1.26
+
+# Perception
+torch>=2.2
+torchvision>=0.17
+pillow>=10.0
+
+# Dashboard / API
+fastapi>=0.110
+uvicorn[standard]>=0.29
+
+# Testing
+pytest>=8.0

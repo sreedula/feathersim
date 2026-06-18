@@ -1,0 +1,34 @@
+# FeatherSim — DECISIONS.md
+
+Architecture decision log. Each entry: date, decision, why, tradeoff.
+
+## 2026-06-18 — Separate sibling repo, not inside loci-mvp
+**Decision:** FeatherSim lives at `/Users/sreekare/feathersim` as its own git repo.
+**Why:** The invocation directory (`loci-mvp`) is an unrelated React/Three.js app with its own
+`CLAUDE.md` and history. Mixing a Python robotics stack in would collide and confuse.
+**Tradeoff:** Two repos to manage vs. one; chosen for clean isolation.
+
+## 2026-06-18 — PyBullet for simulation
+**Decision:** PyBullet over MuJoCo for the sim world.
+**Why:** Fast iteration, trivial install, easy headless stepping and synthetic camera rendering
+(`getCameraImage`) for the auto-labeling pipeline; ample examples.
+**Tradeoff:** Less contact-accurate than MuJoCo, but machine-tending here is coarse pick/place +
+base navigation, so fidelity is sufficient.
+
+## 2026-06-18 — Kinematics & perception logic as pure functions
+**Decision:** Drive kinematics and perception decision logic live in pure functions with no sim
+import; sim state is injected at the edges.
+**Why:** Lets us unit-test the math/logic fast without spinning up PyBullet, per `CLAUDE.md`.
+**Tradeoff:** A little extra plumbing to pass state in — worth it for test speed/reliability.
+
+## 2026-06-18 — Perception starts as a small PyTorch CNN
+**Decision:** Begin with a small CNN with two heads (machine state, part-present) trained on
+auto-labeled sim renders; YOLO-style detection only if classification proves insufficient.
+**Why:** The headline is the auto-labeling pipeline + closing the loop, not SOTA detection.
+A small CNN trains fast on sim data and is easy to evaluate against a baseline.
+**Tradeoff:** Won't localize objects precisely; acceptable since fixtures are at known poses.
+
+## 2026-06-18 — FastAPI + single-file vanilla JS for the dashboard
+**Decision:** FastAPI backend, one static `index.html` with vanilla JS for feed/teleop/telemetry.
+**Why:** No build step, minimal deps, easy to demo; matches the "single-file frontend" guidance.
+**Tradeoff:** Not a rich SPA; fine for a demo dashboard.

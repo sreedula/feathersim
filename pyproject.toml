@@ -1,0 +1,10 @@
+[project]
+name = "feathersim"
+version = "0.0.0"
+description = "A machine-tending autonomy stack in simulation, inspired by Feather Robotics."
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
