@@ -1,7 +1,8 @@
 """Inference: read machine state from a camera frame. [Phase 4]
 
-``perception.read(image) -> PerceivedState`` is the seam the autonomy loop (Phase 5) consumes —
-it returns the model's *prediction* from pixels, never the sim's ground truth.
+``Perception.read(image) -> PerceivedState`` reads a single frame; ``Perception.perceive(world,
+renderer) -> {machine: PerceivedState}`` renders and reads every machine and is the seam the autonomy
+loop (Phase 5) selects on. Both return the model's *prediction* from pixels, never the sim's ground truth.
 """
 
 from __future__ import annotations

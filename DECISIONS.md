@@ -96,6 +96,35 @@ autonomy-loop goal; a physical gripper would be a later, sim-local change. The r
 **ground-truth** machine state for scripting — the Phase-5 autonomy loop must instead consume
 perception, keeping ground-truth and perceived state separate (per the Phase-1 deferred note).
 
+## 2026-06-18 — Autonomy loop: oldest-waiting-first scheduling on *perceived* state
+**Decision:** `run_autonomy(world, perception, renderer, ...)` selects the next machine to tend purely
+from `Perception.perceive` (predictions from rendered pixels) — never `world.states()` / the SDK's
+ground-truth accessors. Among machines *perceived* `done`, it services the one that has been waiting
+longest (tracked via a per-machine `done_since` timestamp), with a deterministic name tie-break. An
+optional `min_confidence` gate drops low-confidence `done` readings before they cost a trip. The loop
+is bounded by both `target_parts` and a soft `max_sim_seconds` budget; every iteration makes progress
+(a tend advances sim time, otherwise a `wait` advance does).
+**Why:** Selecting on perception (not ground truth) is the whole point of the phase — it keeps the
+perceived/ground-truth split honest (the Phase-1 deferred note, reinforced in the Phase-3 SDK decision).
+*Oldest-first* rather than highest-confidence because a `done` machine has stopped cycling (it's blocked),
+so servicing the longest-waiting one is both starvation-free and throughput-maximizing — confidence is
+near-constant (~0.98) and a poor scheduling key. The demo surfaced the bug directly: a confidence+name
+tie-break starved `machine_0` (0 parts) while machines 1–2 got 3 each; oldest-first gives an even 2/2/2.
+**Tradeoff:** Oldest-first needs the loop to remember `done_since` across iterations (small state) and
+assumes `done` is terminal until unload (true of the FSM). A persistent all-false-positive perception
+would burn the whole `max_sim_seconds` budget delivering nothing — acceptable, and it fails *bounded*
+and loud rather than hanging.
+
+## 2026-06-18 — Skill error taxonomy: `PreconditionError` vs. plain `SkillError`
+**Decision:** Split `SkillError` into a `PreconditionError(SkillError)` subclass for world/robot-state
+precondition violations (not-done, not-parked, already/not-holding) vs. plain `SkillError` for genuine
+navigation failures (`could not reach`) and lookups (unknown machine/fixture). The autonomy loop catches
+**only** `PreconditionError` (a perception false positive — recover and move on); a nav failure propagates.
+**Why:** Catching `SkillError` broadly made a real navigation regression indistinguishable from a benign
+perception misread, so an unattended run would silently lose throughput instead of failing loudly. The
+subclassing keeps every existing `pytest.raises(SkillError)` valid (Precondition *is* a SkillError).
+**Tradeoff:** A little more error surface; worth it for the loud-failure guarantee on the headline loop.
+
 ## 2026-06-18 — Three project subagents for the engineering loop
 **Decision:** Add `test-runner` (haiku), `reviewer` (sonnet), `docs-researcher` (sonnet) in
 `.claude/agents/`. The per-phase loop delegates testing and end-of-phase review to them.

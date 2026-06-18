@@ -110,14 +110,37 @@ from a camera frame. Tests deterministic (seeded) — green.  **Result: state ac
 > (neighbors graze the frame edge) — revisit only if Phase-5 perception gets noisier. Render tests
 > skip on a headless host without a GL backend (set `MUJOCO_GL=egl`).
 
-## Phase 5 — Autonomy loop  `[ ]`
+## Phase 5 — Autonomy loop  `[x]`
 
-**Acceptance:** robot tends N machines continuously for M cycles with no manual input.
+**Approach (confirmed):** an unattended `run_autonomy(world, perception, renderer, ...)` loop that
+composes Phases 2–4. Each iteration it calls `perception.perceive(world, renderer)` (predictions from
+pixels, **never** `world.states()`), picks the machine **perceived** `done` that has been **waiting
+longest** (oldest-first — fair and throughput-maximizing, since a done machine stops cycling; an optional
+`min_confidence` gate drops low-confidence readings), and tends it via the SDK (`Robot.tend` → navigate →
+unload → carry → place). If nothing is perceived done it advances the sim a beat and re-perceives; a false
+positive raises `PreconditionError` and the loop drops that candidate and continues, while a genuine
+navigation failure (plain `SkillError`) is *not* swallowed. Returns an `AutonomyReport` (parts delivered,
+sim uptime, throughput/min, per-machine counts, event log). `python -m feathersim.demo` runs it headless.
 
-- [ ] Loop: perceive → pick a `done` machine → navigate → unload → load → repeat
-- [ ] Uses perception (not ground truth) for skill selection
-- [ ] Runs N machines × M cycles unattended; logs throughput/uptime
-- [ ] Tests: loop selects correct machine from perceived state
+**Acceptance:** robot tends N machines continuously for M cycles with no manual input; skill selection
+is driven by **perceived** state (proven by a test where perception disagrees with ground truth and
+the loop follows perception); the loop is robust to perception false positives; throughput/uptime
+logged. Green.
+
+- [x] `autonomy/loop.py`: `run_autonomy` (perceive → pick perceived-`done` → `tend` → repeat) + `AutonomyReport`
+- [x] Uses perception (`perceive`), not ground truth, for skill selection; recovers from false positives
+- [x] Runs N machines × M cycles unattended; report logs throughput + uptime
+- [x] `train.load_or_train_model` (load `model.pt` or train a fresh one) so the demo is one command
+- [x] `demo.py`: wire world + perception + loop; print live tends + final throughput/uptime
+- [x] Tests: loop follows **perceived** state (disagrees-with-truth case); skips false positives; e2e unattended run
+
+> Reviewer: SHIP (after one NEEDS-WORK round, all findings addressed in-phase). Fixed: HIGH
+> all-false-positive termination now has a bounded-run test + "every iteration progresses" invariant;
+> MEDIUM nav-failure masking → `PreconditionError(SkillError)` taxonomy so the loop swallows only
+> precondition misses and a real nav failure propagates loudly; MEDIUM typed the `Perceiver` seam.
+> LOWs: `min_confidence` gate added, PLAN reconciled to oldest-first, demo GL guard, docstrings.
+> The demo (not the unit tests) caught a scheduler-fairness bug — confidence tie-break starved
+> `machine_0`; switched to oldest-waiting-first (even 2/2/2). See LEARNINGS.md.
 
 ## Phase 6 — Teleop + dashboard  `[ ]`
 

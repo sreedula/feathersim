@@ -52,6 +52,17 @@ python.org framework build (`/Library/Frameworks/Python.framework/Versions/3.13`
 `python3` for every target — keep it that way and always invoke `python3`/`make`, never bare
 `python`, for this project.
 
+## 2026-06-18 — The demo caught a scheduler-fairness bug the unit tests didn't (Phase 5)
+Running `make demo` on the real model delivered 6 parts but `machine_0: 0, machine_1: 3, machine_2: 3` —
+one machine starved. Diagnosis: perception was *not* at fault (a quick probe with the robot parked at the
+table read all three machines' `done` state with 100% agreement, 0 misreads). The cause was the loop's
+tie-break: sorting perceived-done candidates by `(confidence, name)` descending, with confidence ~constant
+at 0.98, made the order purely name-descending, so `machine_0` lost every tie and never got serviced within
+the 6-part target. Fix: schedule **oldest-waiting-first** (track when each machine was first seen done) →
+even `2/2/2`. Lessons: (1) a green unit suite doesn't prove the *emergent* behavior is right — always run
+the actual demo and eyeball the distribution, not just the total; (2) when one component looks guilty
+(perception), cheaply falsify that hypothesis before "fixing" it — the bug was in the scheduler.
+
 ## 2026-06-18 — Subagents load at session start
 Files added to `.claude/agents/` are NOT available mid-session — they're read when the session
 starts. After creating/editing them, restart Claude Code (or add via `/agents`) before trying to

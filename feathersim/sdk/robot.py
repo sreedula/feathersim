@@ -34,7 +34,14 @@ _AT_HEADING = 0.15
 
 
 class SkillError(RuntimeError):
-    """Raised when a skill's precondition is not met (e.g. picking from a machine that isn't done)."""
+    """Base error for a skill that cannot proceed (precondition unmet, or navigation failed)."""
+
+
+class PreconditionError(SkillError):
+    """A skill's precondition on world/robot state is unmet (e.g. picking from a machine that isn't
+    ``done``, or not parked at the target). Distinct from a navigation failure so callers — notably
+    the autonomy loop recovering from a perception false positive — can tell "the world wasn't ready"
+    apart from "the robot couldn't get there" and only swallow the former."""
 
 
 class Robot:
@@ -100,12 +107,12 @@ class Robot:
         Returns the part's name.
         """
         if self.holding is not None:
-            raise SkillError(f"already holding {self.holding!r}")
+            raise PreconditionError(f"already holding {self.holding!r}")
         m = self._machine(machine)
         if not self._at(self.tending_pose(machine)):
-            raise SkillError(f"not parked at {machine!r}; call move_to first")
+            raise PreconditionError(f"not parked at {machine!r}; call move_to first")
         if m.state is not MachineState.DONE:
-            raise SkillError(f"{machine!r} is {m.state.value}, not done")
+            raise PreconditionError(f"{machine!r} is {m.state.value}, not done")
         part = f"part_{machine}_{m.parts_done}"
         m.reset(self.world.time)  # unload finished part; machine reloads and restarts
         self.holding = part
@@ -117,9 +124,9 @@ class Robot:
         Precondition: parked at ``target`` and holding a part. Returns the deposited part's name.
         """
         if self.holding is None:
-            raise SkillError("not holding a part")
+            raise PreconditionError("not holding a part")
         if not self._at(self.tending_pose(target) if isinstance(target, str) else target):
-            raise SkillError(f"not parked at {target!r}; call move_to first")
+            raise PreconditionError(f"not parked at {target!r}; call move_to first")
         part, self.holding = self.holding, None
         self.delivered.append(part)
         return part

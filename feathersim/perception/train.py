@@ -74,6 +74,21 @@ def train(
     return model, evaluate(model, val_ds)
 
 
+def load_or_train_model() -> PerceptionCNN:
+    """Return a ready-to-use perception model: load ``model.pt`` if present, else train a fresh one.
+
+    Lets the demo run as a single command on a clean checkout (``model.pt`` is gitignored) without a
+    separate ``make train`` step — the fallback trains a smaller dataset so it stays quick.
+    """
+    model = PerceptionCNN()
+    if MODEL_PATH.exists():
+        model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
+        return model.eval()
+    train_ds, val_ds = train_val_split(generate_dataset(n_samples=480, seed=0), seed=0)
+    model, _ = train(train_ds, val_ds, seed=0)
+    return model.eval()
+
+
 def main() -> None:
     full = generate_dataset(n_samples=720, seed=0)
     train_ds, val_ds = train_val_split(full, seed=0)
