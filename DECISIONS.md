@@ -146,6 +146,28 @@ source of truth for each step. GL contexts are thread-affine (macOS), so rendere
 closed *on the sim thread* (in `_run`), not in `__init__` — a real bug that cost a debugging round.
 Throughput is reported over total sim time (manual override counts against the rate).
 
+## 2026-06-18 — v2 Phase A: domain randomization in two separable stages; deploy the robust model
+**Decision:** Make perception hard via a seeded `DomainRandomizer`, split into (1) a **3D-scene** stage
+that mutates the MuJoCo model before each render — randomized worldbody-light position/intensity/color
+tint, plus a per-machine non-colliding `occluder_i` box partially blocking the status light — and (2) a
+**sensor** stage of pure numpy ops on the rendered crop (additive Gaussian noise + directional motion
+blur). The status-light *label color* is never randomized (only its appearance). `make train` now trains
+two equally-sized models — `clean` (DR off, v1 recipe) and `robust` (DR on) — evaluates both on a clean
+and a randomized held-out set (a 2×2 matrix in committed `metrics.json`), and **deploys the robust model
+as `model.pt`** (keeping `model_clean.pt` for comparison). Result: under randomization the clean model
+drops 1.0→0.744 while the robust model holds 0.844 (+10 pts), both 1.0 on clean, baseline 0.372.
+**Why:** The split keeps each stage independently unit-testable (sensor ops are pure; scene ops need
+sim) and mirrors a real pipeline (physical scene vs sensor noise). A real 3D occluder (not a painted
+patch) shades and parallaxes correctly — more defensible. Deploying the robust model is free: it scores
+1.0 on the clean renders the live loop/dashboard produce (occluders hidden, default light = the MJCF
+defaults `reset_scene` restores), so there's no train/serve gap, and it's far better if conditions ever
+degrade. The label-color invariant keeps the task honest; bounded occluder size/offset keep every sample
+solvable (worst case leaves ~13 of 93 light px visible).
+**Tradeoff:** The "robust beats clean" headline is **data-scale-dependent** (it reverses at small n —
+see LEARNINGS), so the fast unit suite proves the *mechanism* (DR degrades a clean model) and asserts the
+*outcome* from the committed full-scale `metrics.json` rather than retraining in CI. The committed-metrics
+test therefore validates a regenerated artifact, not the live pipeline — an accepted trade for suite speed.
+
 ## 2026-06-18 — Three project subagents for the engineering loop
 **Decision:** Add `test-runner` (haiku), `reviewer` (sonnet), `docs-researcher` (sonnet) in
 `.claude/agents/`. The per-phase loop delegates testing and end-of-phase review to them.

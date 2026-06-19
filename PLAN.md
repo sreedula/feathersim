@@ -183,3 +183,86 @@ hand back. Green.
 **Project complete.** Phases 0–6 shipped; the walking skeleton is a full machine-tending autonomy stack
 — sim → mecanum kinematics → go-to-pose control → skill SDK → auto-labeled perception (state acc 1.0 vs
 0.39 baseline) → unattended autonomy loop → browser teleop/telemetry dashboard.
+
+---
+
+# FeatherSim v2 — the 10x expansion
+
+Five hard systems stacked on the working v1. Same engineering loop, same subagents, same checkpoints.
+Extend v1 modules; don't rewrite them. The dashboard stays launchable at the end of every phase.
+
+## Phase A — Brutal perception (domain randomization)  `[x]`  ← checkpoint (approach + before/after acc)
+
+**Approach (confirmed):** a seeded `DomainRandomizer` threaded through the
+render/auto-label pipeline, split into 3D-scene randomization (before render) and image-space sensor
+corruption (after render):
+- *Scene (mutate the MuJoCo model per sample):* randomize the worldbody `<light>` position, diffuse
+  intensity, and color tint; add a per-machine non-colliding `occluder_i` geom placed at a random offset
+  partially in front of the status light (random size, present with probability `p`) — a real 3D occluder
+  that shades and parallaxes correctly, not a painted patch.
+- *Sensor (pure numpy/PIL on the uint8 crop):* additive Gaussian noise (random σ) + directional motion
+  blur (random angle/length kernel). Pure, unit-testable functions — no sim needed.
+- The status-light **label color** (gray/amber/green) is never randomized — that's the signal; only its
+  *appearance* under randomized illumination / occlusion / noise / blur is.
+
+**Experiment:** train two equally-sized models — `clean` (DR off, the v1 recipe) and `robust` (DR on) —
+then evaluate **both** on a randomized held-out set *and* a clean held-out set (a 2×2 matrix). Deploy the
+robust model as `model.pt`; keep `model_clean.pt` for comparison (both gitignored). All numbers →
+committed `metrics.json`.
+
+**Acceptance:** robust model beats clean model on the randomized held-out set by a clear margin; the
+clean model degrades from its clean accuracy under randomization while the robust model holds; the 2×2
+accuracy matrix + majority baseline are logged to `metrics.json`. Tests: each augmentation is a
+deterministic pure function (same seed → identical output; shape/dtype preserved; pixels actually
+change); DR is reproducible; robust ≥ clean on the randomized set. Green.
+
+- [x] `perception/randomize.py`: `DomainRandomizer` config + pure `gaussian_noise` / `motion_blur` + scene helpers
+- [x] `sim/world.py`: per-machine `occluder_i` geom + `set_occluder` / `randomize_lighting` / `reset_scene`
+- [x] `perception/dataset.py`: `generate_dataset(..., randomizer=...)` threads DR through; class balance preserved
+- [x] `perception/train.py`: train clean + robust; 2×2 eval matrix → `metrics.json`; save `model.pt` (robust) + `model_clean.pt`
+- [x] Tests: augmentation determinism/shape; DR changes pixels; clean model degrades; committed metrics show robust>clean
+- [x] **Checkpoint: confirm randomization approach + show before/after accuracy**
+
+> **Result:** under randomization clean model 74.4% → robust model 84.4% (+10 pts); both 1.0 on clean;
+> baseline 37.2%. (committed `metrics.json`).
+> Reviewer: SHIP (no CRITICAL/HIGH). Label-color invariant, determinism/no-leak, and no train/serve gap
+> all verified. Fixed in-phase: corrected the occluder-bound comment (projected shadow ≠ physical size),
+> `gaussian_noise(σ≤0)` returns a copy, dropped a `type: ignore`, documented the metrics.json schema.
+> Deferred MEDIUM: the "robust>clean" headline is asserted from the committed full-scale `metrics.json`,
+> not retrained in CI (it reverses at small n — see LEARNINGS); the suite proves only the degradation
+> mechanism live. The robust model is now `model.pt` (deployed); demo still tends 6 parts (2/2/2).
+
+## Phase B — Path planning + obstacle avoidance  `[ ]`
+
+**Acceptance:** occupancy grid of the floor (machines, table, obstacles); A* global planner to a target
+pose; a waypoint-follower drives the path via the existing mecanum kinematics; 1–2 static obstacles the
+robot routes around. Unit tests on the planner (finds path / reports no-path); robot reaches targets
+without intersecting obstacles in sim.
+
+## Phase C — Multi-robot fleet + scheduling  `[ ]`  ← checkpoint (coordination + collision avoidance)
+
+**Acceptance:** 2–3 robots in the MJCF (each its own base, camera, perception read); a fleet manager
+allocates `done` machines so two robots never target the same one; inter-robot collision avoidance
+(cell reservation on the grid, or mutual yielding); ≥2 scheduling strategies (e.g. nearest-done vs
+longest-waiting) with throughput measured for each. N robots tend M machines unattended without
+colliding or double-assigning; throughput logged per strategy.
+
+## Phase D — Learned policy (behavior cloning)  `[ ]`  ← checkpoint (BC setup + GPU/CPU)
+
+**Acceptance:** log (observation → action) pairs from the v1 hand-coded controller (the "expert") over
+many cycles; train a small policy net to imitate it (behavior cloning); run the loop driven by the
+learned policy and compare throughput/behavior to the expert. Learned policy runs end-to-end and
+approaches the expert's throughput; comparison logged. Flag if CPU-only training is too slow to run here.
+
+## Phase E — Command-center dashboard  `[ ]`  ← checkpoint (final demo review)
+
+**Acceptance:** dashboard shows all robots at once, each robot's planned path overlaid, per-robot
+perceived-vs-true machine states, current task assignments, and live scheduling decisions; a toggle
+between hand-coded controller and learned policy; a perception-difficulty slider that dials domain
+randomization up/down live and shows accuracy reacting. All live in the browser.
+
+## v2 Definition of done
+
+- [ ] `README.md` updated with a multi-robot fleet GIF, the rule-vs-learned toggle, and the difficulty slider
+- [ ] One-command launch; all tests passing
+- [ ] `DECISIONS.md` + `LEARNINGS.md` reflect every v2 choice

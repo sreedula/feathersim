@@ -21,10 +21,16 @@ from feathersim.perception.dataset import (
     train_val_split,
 )
 from feathersim.perception.model import PerceptionCNN, images_to_tensor
+from feathersim.perception.randomize import DomainRandomizer
 
 ARTIFACT_DIR = Path(__file__).resolve().parent
+# metrics.json schema (written by main, asserted by tests/test_randomize.py — keep in sync):
+#   {"state_accuracy": {"clean_model": {"clean", "randomized"},
+#                       "robust_model": {"clean", "randomized"}},
+#    "state_majority_baseline", "robust_part_accuracy_randomized", "n_val"}
 METRICS_PATH = ARTIFACT_DIR / "metrics.json"
-MODEL_PATH = ARTIFACT_DIR / "model.pt"
+MODEL_PATH = ARTIFACT_DIR / "model.pt"              # deployed model — the DR-robust one (v2 Phase A)
+MODEL_CLEAN_PATH = ARTIFACT_DIR / "model_clean.pt"  # v1-style clean-trained model, kept for comparison
 
 
 def evaluate(model: PerceptionCNN, ds: Dataset) -> dict[str, float]:
@@ -78,28 +84,59 @@ def load_or_train_model() -> PerceptionCNN:
     """Return a ready-to-use perception model: load ``model.pt`` if present, else train a fresh one.
 
     Lets the demo run as a single command on a clean checkout (``model.pt`` is gitignored) without a
-    separate ``make train`` step — the fallback trains a smaller dataset so it stays quick.
+    separate ``make train`` step. The fallback trains a smaller **domain-randomized** dataset so the
+    deployed model matches what ``make train`` produces (the robust model).
     """
     model = PerceptionCNN()
     if MODEL_PATH.exists():
         model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
         return model.eval()
-    train_ds, val_ds = train_val_split(generate_dataset(n_samples=480, seed=0), seed=0)
+    train_ds, val_ds = train_val_split(
+        generate_dataset(n_samples=480, seed=0, randomizer=DomainRandomizer()), seed=0
+    )
     model, _ = train(train_ds, val_ds, seed=0)
     return model.eval()
 
 
-def main() -> None:
-    full = generate_dataset(n_samples=720, seed=0)
-    train_ds, val_ds = train_val_split(full, seed=0)
-    model, metrics = train(train_ds, val_ds, seed=0)
+def _state_acc(model: PerceptionCNN, ds: Dataset) -> float:
+    return evaluate(model, ds)["state_accuracy"]
 
-    torch.save(model.state_dict(), MODEL_PATH)
+
+def main() -> None:
+    # Train two equally-sized models: clean (v1 recipe) and robust (domain-randomized), then evaluate
+    # both on a clean held-out set AND a randomized one — the 2×2 before/after matrix (v2 Phase A).
+    clean_tr, clean_val = train_val_split(generate_dataset(n_samples=720, seed=0), seed=0)
+    rand_tr, rand_val = train_val_split(
+        generate_dataset(n_samples=720, seed=0, randomizer=DomainRandomizer()), seed=0
+    )
+
+    clean_model, _ = train(clean_tr, clean_val, seed=0)
+    robust_model, _ = train(rand_tr, rand_val, seed=0)
+
+    metrics = {
+        "state_accuracy": {
+            "clean_model": {"clean": _state_acc(clean_model, clean_val),
+                            "randomized": _state_acc(clean_model, rand_val)},
+            "robust_model": {"clean": _state_acc(robust_model, clean_val),
+                             "randomized": _state_acc(robust_model, rand_val)},
+        },
+        "state_majority_baseline": majority_baseline(rand_val.state_labels),
+        "robust_part_accuracy_randomized": evaluate(robust_model, rand_val)["part_accuracy"],
+        "n_val": int(len(rand_val)),
+    }
+
+    torch.save(robust_model.state_dict(), MODEL_PATH)
+    torch.save(clean_model.state_dict(), MODEL_CLEAN_PATH)
     METRICS_PATH.write_text(json.dumps(metrics, indent=2) + "\n")
 
-    beat = metrics["state_accuracy"] - metrics["state_majority_baseline"]
+    sa = metrics["state_accuracy"]
     print(json.dumps(metrics, indent=2))
-    print(f"state accuracy beats majority baseline by {beat:+.1%}; saved {MODEL_PATH.name}, {METRICS_PATH.name}")
+    print(
+        f"under randomization: clean model {sa['clean_model']['randomized']:.1%} → "
+        f"robust model {sa['robust_model']['randomized']:.1%} "
+        f"(+{sa['robust_model']['randomized'] - sa['clean_model']['randomized']:.1%}); "
+        f"baseline {metrics['state_majority_baseline']:.1%}. Saved {MODEL_PATH.name}, {MODEL_CLEAN_PATH.name}."
+    )
 
 
 if __name__ == "__main__":

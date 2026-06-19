@@ -9,6 +9,7 @@ from feathersim.perception.dataset import (
 )
 from feathersim.perception.infer import Perception, PerceivedState
 from feathersim.perception.model import PerceptionCNN, images_to_tensor
+from feathersim.perception.randomize import DomainRandomizer, gaussian_noise, motion_blur
 
 # NB: training entry points live in feathersim.perception.train and are intentionally NOT imported
 # here, so `python -m feathersim.perception.train` doesn't trip the "module already imported" warning.
@@ -23,4 +24,7 @@ __all__ = [
     "images_to_tensor",
     "Perception",
     "PerceivedState",
+    "DomainRandomizer",
+    "gaussian_noise",
+    "motion_blur",
 ]

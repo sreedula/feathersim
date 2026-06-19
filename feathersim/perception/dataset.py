@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import mujoco
 import numpy as np
 
+from feathersim.perception.randomize import DomainRandomizer, apply_scene
 from feathersim.sim.machine import MachineState
 from feathersim.sim.world import World
 
@@ -44,8 +45,14 @@ def generate_dataset(
     image_size: int = IMAGE_SIZE,
     n_machines: int = 3,
     jitter: bool = True,
+    randomizer: DomainRandomizer | None = None,
 ) -> Dataset:
-    """Render ``n_samples`` auto-labeled machine close-ups from randomized ground-truth configs."""
+    """Render ``n_samples`` auto-labeled machine close-ups from randomized ground-truth configs.
+
+    With ``randomizer`` set, domain randomization is applied — randomized scene lighting + status-light
+    occluders (3D, before render) and Gaussian noise + motion blur (on the crop, after render) — so the
+    model trains under hard conditions. ``randomizer=None`` reproduces the clean v1 pipeline.
+    """
     rng = np.random.default_rng(seed)
     world = World(n_machines=n_machines, seed=seed)
     renderer = mujoco.Renderer(world.model, height=image_size, width=image_size)
@@ -63,13 +70,20 @@ def generate_dataset(
             ]
             for j, (sj, pj) in enumerate(configs):
                 world.set_machine_visual(j, sj, pj)
+            if randomizer is not None:
+                apply_scene(world, randomizer.sample_scene(rng, n_machines))
+            else:
+                world.reset_scene()
             state, part = configs[i]
             cam = world.machine_camera(i)
             if jitter:
                 cam.azimuth += float(rng.uniform(-8.0, 8.0))
                 cam.elevation += float(rng.uniform(-4.0, 4.0))
                 cam.distance *= float(rng.uniform(0.95, 1.08))
-            images[k] = world.render_machine(renderer, i, cam)
+            image = world.render_machine(renderer, i, cam)
+            if randomizer is not None:
+                image = randomizer.corrupt_image(image, rng)
+            images[k] = image
             states[k] = STATE_TO_INDEX[state]
             parts[k] = 1.0 if part else 0.0
     finally:

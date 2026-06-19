@@ -35,6 +35,13 @@ STATE_LIGHT = {
 }
 _PART_RGBA = (0.15, 0.35, 0.95, 1.0)  # vivid blue — high contrast vs floor, door & machines (alpha 0 hides)
 
+# Domain-randomization occluder (v2 Phase A): a small box in front of the status light, hidden by
+# default (alpha 0). The dataset generator places & shows it to partially block the light.
+_OCCLUDER_BASE = (0.0, -0.34, 0.44)   # local pos in the machine body, between camera and status light
+_OCCLUDER_RGB = (0.18, 0.18, 0.20)    # neutral dark — clearly an occluder, never mistaken for a state color
+_LIGHT_POS_DEFAULT = (0.0, 0.0, 4.0)      # worldbody <light> defaults (restored by reset_scene)
+_LIGHT_DIFFUSE_DEFAULT = (0.9, 0.9, 0.9)
+
 
 def _machine_positions(n: int) -> list[tuple[float, float]]:
     """Lay ``n`` machines in a row along x at ``MACHINE_Y``, facing the robot at the origin."""
@@ -67,6 +74,9 @@ def build_mjcf(n_machines: int) -> str:
             contype="0" conaffinity="0" rgba="{light_rgba}"/>
       <geom name="part_{i}" type="box" pos="0 -0.42 0.02" size="0.13 0.13 0.11"
             contype="0" conaffinity="0" rgba="{part_rgba}"/>
+      <geom name="occluder_{i}" type="box" pos="{_OCCLUDER_BASE[0]} {_OCCLUDER_BASE[1]} {_OCCLUDER_BASE[2]}"
+            size="0.05 0.02 0.05" contype="0" conaffinity="0"
+            rgba="{_OCCLUDER_RGB[0]} {_OCCLUDER_RGB[1]} {_OCCLUDER_RGB[2]} 0"/>
     </body>"""
         )
     return f"""
@@ -124,6 +134,10 @@ class World:
         ]
         self._part_gid = [
             mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f"part_{i}")
+            for i in range(self.n_machines)
+        ]
+        self._occluder_gid = [
+            mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f"occluder_{i}")
             for i in range(self.n_machines)
         ]
 
@@ -218,6 +232,30 @@ class World:
         """
         for i, m in enumerate(self.machines):
             self.set_machine_visual(i, m.state, m.state in (MachineState.RUNNING, MachineState.DONE))
+
+    # --- domain randomization (v2 Phase A) ------------------------------------------------
+
+    def randomize_lighting(self, pos_xy: tuple[float, float], diffuse: tuple[float, float, float]) -> None:
+        """Move the scene light to ``pos_xy`` (x, y; z kept) and set its diffuse color/intensity."""
+        self.model.light_pos[0, 0] = pos_xy[0]
+        self.model.light_pos[0, 1] = pos_xy[1]
+        self.model.light_diffuse[0] = diffuse
+
+    def set_occluder(self, i: int, *, present: bool, dx: float = 0.0, dz: float = 0.0,
+                     size: float = 0.05) -> None:
+        """Place machine ``i``'s occluder box (offset ``dx``/``dz`` from its base, half-extent ``size``)
+        and show/hide it via alpha. Used by the dataset generator to partially block the status light."""
+        gid = self._occluder_gid[i]
+        bx, by, bz = _OCCLUDER_BASE
+        self.model.geom_pos[gid] = (bx + dx, by, bz + dz)
+        self.model.geom_size[gid] = (size, 0.02, size)
+        self.model.geom_rgba[gid, 3] = 1.0 if present else 0.0
+
+    def reset_scene(self) -> None:
+        """Restore default lighting and hide every occluder (back to the clean render conditions)."""
+        self.randomize_lighting(_LIGHT_POS_DEFAULT[:2], _LIGHT_DIFFUSE_DEFAULT)
+        for i in range(self.n_machines):
+            self.set_occluder(i, present=False)
 
     def machine_camera(self, i: int, *, azimuth: float = 90.0, elevation: float = -12.0,
                        distance: float = 1.6) -> mujoco.MjvCamera:

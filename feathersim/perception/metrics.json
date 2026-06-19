@@ -1,6 +1,15 @@
 {
-  "state_accuracy": 1.0,
-  "part_accuracy": 1.0,
-  "state_majority_baseline": 0.39444444444444443,
+  "state_accuracy": {
+    "clean_model": {
+      "clean": 1.0,
+      "randomized": 0.7444444444444445
+    },
+    "robust_model": {
+      "clean": 1.0,
+      "randomized": 0.8444444444444444
+    }
+  },
+  "state_majority_baseline": 0.37222222222222223,
+  "robust_part_accuracy_randomized": 1.0,
   "n_val": 180
 }

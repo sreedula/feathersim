@@ -83,6 +83,24 @@ Two fixes: (1) test the generator function directly (`next(gen)`; `gen.close()`)
 disconnect, but don't rely on that for the stop path). Lesson: never drive an unbounded streaming
 response through TestClient — exercise the generator in isolation.
 
+## 2026-06-18 — Domain randomization needs *data scale* to pay off — it backfires when small (v2 Phase A)
+Building the robust-perception comparison, the unit-scale check (`n=300`) showed the **opposite** of the
+full-scale result: the DR-trained model got **0.61** on the randomized set vs the clean model's **0.72** —
+robust *lost*. At full scale (`n=720`) it flips to 0.844 vs 0.744 (+10 pts). With little data the DR model
+underfits the much harder (occlusion + noise + blur) distribution while the clean model coasts on the easy
+fraction of randomized samples. Lesson: don't assert a scale-sensitive ML *outcome* in a fast unit test —
+it'll be flaky-by-construction. Instead the suite proves the **mechanism** that always holds (a clean model
+*degrades* under randomization) with one small training run, and locks the **headline** (robust > clean) by
+asserting the committed full-scale `metrics.json`. The real proof is the regenerated artifact + `make train`.
+
+## 2026-06-18 — A 3D occluder's *projected* shadow is bigger than its physical size (v2 Phase A)
+The status-light occluder is a small box placed ~0.12 m *in front* of the light (toward the camera), so on
+the image it covers more than its half-extent would suggest — a box smaller than the light sphere can still
+shadow most of it. My first justification ("half-extent < light radius ⇒ never fully hidden") was wrong
+reasoning even though the bound happened to hold. The "never fully hidden / always labelable" invariant is
+**empirical** (tuned so worst case leaves ~13 of 93 light px visible), not derivable from the half-extent.
+Lesson: for anything between the camera and the cue, reason in *image/projected* space, not object space.
+
 ## 2026-06-18 — Subagents load at session start
 Files added to `.claude/agents/` are NOT available mid-session — they're read when the session
 starts. After creating/editing them, restart Claude Code (or add via `/agents`) before trying to
