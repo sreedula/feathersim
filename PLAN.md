@@ -232,12 +232,30 @@ change); DR is reproducible; robust ≥ clean on the randomized set. Green.
 > not retrained in CI (it reverses at small n — see LEARNINGS); the suite proves only the degradation
 > mechanism live. The robust model is now `model.pt` (deployed); demo still tends 6 parts (2/2/2).
 
-## Phase B — Path planning + obstacle avoidance  `[ ]`
+## Phase B — Path planning + obstacle avoidance  `[x]`
 
 **Acceptance:** occupancy grid of the floor (machines, table, obstacles); A* global planner to a target
 pose; a waypoint-follower drives the path via the existing mecanum kinematics; 1–2 static obstacles the
 robot routes around. Unit tests on the planner (finds path / reports no-path); robot reaches targets
 without intersecting obstacles in sim.
+
+- [x] `planning/occupancy.py` (pure): `Rect`, `OccupancyGrid`, `build_grid` (inflate by robot radius)
+- [x] `planning/astar.py` (pure): 8-connected A* (octile, no corner-cut) + `plan_path` (world coords + LOS smoothing)
+- [x] `planning/follow.py`: `follow_path` waypoint follower reusing `drive_to_pose` per leg
+- [x] `sim/world.py`: optional `n_obstacles` pillars; `obstacle_rects` / `occupancy_grid`
+- [x] `sdk/robot.py`: opt-in `Robot(plan=True)` → `move_to` plans + follows (default off = v1 behavior)
+- [x] `demo.py`: obstacles + planning; robot routes around, still delivers 6 parts
+- [x] Tests: A* path/no-path/around-barrier; body clears obstacles on every driven leg; tending poses reachable
+
+> Reviewer: SHIP after **two** NEEDS-WORK rounds. R1: test asserted clearance>0.1 but body radius is 0.2
+> (didn't prove body non-intersection). R2 (CRITICAL): the fixed test sampled only table→machine_2 (easy
+> dir); the machine→table return legs bowed to 0.169 m — **body 0.031 m inside a non-colliding pillar,
+> silently**. Root cause: grid inflation protects the *center*, but the P-controlled follower bows outside
+> the validated segments on turns. Fix: tightened follower `waypoint_tolerance` 0.08→0.04, obstacle-only
+> `OBSTACLE_CLEARANCE=0.08`, repositioned pillars to (±0.62,0) clear of tending corridors, parametrized the
+> safety test over **all** driven legs (table↔machine + origin-start + machine→machine). Worst-case body
+> clearance now ~0.29 m vs 0.2 m radius. Both gotchas logged in LEARNINGS.md. Deferred LOW: static grid
+> built once (Phase C rebuilds per-step for moving robots).
 
 ## Phase C — Multi-robot fleet + scheduling  `[ ]`  ← checkpoint (coordination + collision avoidance)
 

@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 import mujoco
 import numpy as np
 
+from feathersim.planning.occupancy import OccupancyGrid, Rect, build_grid
 from feathersim.sim.machine import Machine, MachineState
 
 TIMESTEP = 0.01  # sim seconds per step (100 Hz) — fine resolution, fast headless stepping
@@ -42,6 +43,22 @@ _OCCLUDER_RGB = (0.18, 0.18, 0.20)    # neutral dark — clearly an occluder, ne
 _LIGHT_POS_DEFAULT = (0.0, 0.0, 4.0)      # worldbody <light> defaults (restored by reset_scene)
 _LIGHT_DIFFUSE_DEFAULT = (0.9, 0.9, 0.9)
 
+ROBOT_RADIUS = 0.2                        # base cylinder radius — the occupancy-grid inflation
+# Extra inflation for the static pillars beyond the robot radius. The waypoint follower drives a
+# P-controlled curve toward each waypoint (only the straight *segments* are checked free), so it bows
+# into the inflation band on turns; this margin, with the tightened follower waypoint tolerance, keeps
+# real body clearance above the robot radius on *every* leg the loop drives — the central machine_1↔table
+# corridor bows worst at ~0.29 m vs the 0.2 m radius (see tests/test_planning.py). Applied only to
+# obstacles, not machines/table — those are inflated by the radius alone so tending poses stay reachable.
+OBSTACLE_CLEARANCE = 0.08
+GRID_BOUNDS = (-2.0, -2.0, 2.0, 2.0)      # (xmin, ymin, xmax, ymax) the planner rasterizes over
+# Static obstacles (v2 Phase B): pillars on the table↔machine_2 and table↔machine_0 diagonals so the
+# planner must route around them, kept clear of every tending pose (body clearance is then governed by
+# grid inflation, not by a goal sitting next to a pillar) and spaced so the central x≈0 corridor to
+# machine_1 stays open. Non-colliding (kinematic base) — avoidance is planning-based.
+_OBSTACLE_POSITIONS = [(0.62, 0.0), (-0.62, 0.0)]
+_OBSTACLE_HALF = 0.22
+
 
 def _machine_positions(n: int) -> list[tuple[float, float]]:
     """Lay ``n`` machines in a row along x at ``MACHINE_Y``, facing the robot at the origin."""
@@ -57,8 +74,22 @@ def _rgba_str(rgb_or_rgba: tuple[float, ...]) -> str:
     return " ".join(f"{v:g}" for v in vals)
 
 
-def build_mjcf(n_machines: int) -> str:
-    """Return an MJCF string for a world with ``n_machines`` machine bodies."""
+def _obstacle_mjcf(n_obstacles: int) -> str:
+    """MJCF for ``n_obstacles`` static pillars (non-colliding visual markers the planner routes around)."""
+    out = []
+    for i, (ox, oy) in enumerate(_OBSTACLE_POSITIONS[:n_obstacles]):
+        out.append(
+            f"""
+    <body name="obstacle_{i}" pos="{ox} {oy} 0.35">
+      <geom type="box" size="{_OBSTACLE_HALF} {_OBSTACLE_HALF} 0.35"
+            contype="0" conaffinity="0" rgba="0.85 0.35 0.10 1"/>
+    </body>"""
+        )
+    return "".join(out)
+
+
+def build_mjcf(n_machines: int, n_obstacles: int = 0) -> str:
+    """Return an MJCF string for a world with ``n_machines`` machine bodies and ``n_obstacles`` pillars."""
     light_rgba = _rgba_str(STATE_LIGHT[MachineState.IDLE])  # initial color; mutated per state at runtime
     part_rgba = _rgba_str(_PART_RGBA)
     bodies = []
@@ -95,7 +126,7 @@ def build_mjcf(n_machines: int) -> str:
     </body>
     <body name="table" pos="{TABLE_XY[0]} {TABLE_XY[1]} 0.2">
       <geom type="box" size="0.5 0.3 0.2" rgba="0.60 0.42 0.24 1"/>
-    </body>{"".join(bodies)}
+    </body>{"".join(bodies)}{_obstacle_mjcf(n_obstacles)}
   </worldbody>
 </mujoco>"""
 
@@ -110,6 +141,7 @@ class World:
 
     n_machines: int = 3
     seed: int = 0
+    n_obstacles: int = 0
     model: mujoco.MjModel = field(init=False, repr=False)
     data: mujoco.MjData = field(init=False, repr=False)
     machines: list[Machine] = field(init=False)
@@ -118,7 +150,9 @@ class World:
     def __post_init__(self) -> None:
         if not 1 <= self.n_machines <= 3:
             raise ValueError(f"n_machines must be 1–3, got {self.n_machines}")
-        self.model = mujoco.MjModel.from_xml_string(build_mjcf(self.n_machines))
+        if not 0 <= self.n_obstacles <= len(_OBSTACLE_POSITIONS):
+            raise ValueError(f"n_obstacles must be 0–{len(_OBSTACLE_POSITIONS)}, got {self.n_obstacles}")
+        self.model = mujoco.MjModel.from_xml_string(build_mjcf(self.n_machines, self.n_obstacles))
         self.data = mujoco.MjData(self.model)
 
         # qpos / qvel (dof) addresses for the base joints — looked up by name, no layout assumption.
@@ -256,6 +290,28 @@ class World:
         self.randomize_lighting(_LIGHT_POS_DEFAULT[:2], _LIGHT_DIFFUSE_DEFAULT)
         for i in range(self.n_machines):
             self.set_occluder(i, present=False)
+
+    # --- path planning (v2 Phase B) -------------------------------------------------------
+
+    def _footprints(self, obstacle_margin: float) -> list[Rect]:
+        rects = [Rect(mx, my, 0.3, 0.3) for mx, my in _machine_positions(self.n_machines)]
+        rects.append(Rect(TABLE_XY[0], TABLE_XY[1], 0.5, 0.3))
+        rects += [
+            Rect(ox, oy, _OBSTACLE_HALF + obstacle_margin, _OBSTACLE_HALF + obstacle_margin)
+            for ox, oy in _OBSTACLE_POSITIONS[: self.n_obstacles]
+        ]
+        return rects
+
+    def obstacle_rects(self) -> list[Rect]:
+        """True obstacle footprints (machines, output table, static pillars) — no clearance margin."""
+        return self._footprints(0.0)
+
+    def occupancy_grid(self, *, resolution: float = 0.1, inflation: float = ROBOT_RADIUS) -> OccupancyGrid:
+        """Build an occupancy grid of the floor: machines/table inflated by ``inflation`` (the robot
+        radius), static pillars by ``inflation + OBSTACLE_CLEARANCE`` (extra room for the follower's curve)."""
+        return build_grid(
+            self._footprints(OBSTACLE_CLEARANCE), GRID_BOUNDS, resolution=resolution, inflation=inflation
+        )
 
     def machine_camera(self, i: int, *, azimuth: float = 90.0, elevation: float = -12.0,
                        distance: float = 1.6) -> mujoco.MjvCamera:

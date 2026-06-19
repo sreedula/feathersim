@@ -19,6 +19,7 @@ from feathersim.control.go_to_pose import (
     pose_error,
 )
 from feathersim.kinematics.holonomic import MecanumGeometry
+from feathersim.planning import follow_path, plan_path
 from feathersim.sim.machine import MachineState
 
 if TYPE_CHECKING:
@@ -54,6 +55,7 @@ class Robot:
         gains: PoseGains = PoseGains(),
         tolerance: PoseTolerance = PoseTolerance(),
         geom: MecanumGeometry = MecanumGeometry(),
+        plan: bool = False,
     ) -> None:
         self.world = world
         self.gains = gains
@@ -61,6 +63,10 @@ class Robot:
         self.geom = geom
         self.holding: str | None = None      # name of the part currently carried, or None
         self.delivered: list[str] = []        # parts placed on the table, in order
+        # With plan=True, move_to routes around the world's obstacles via A* instead of driving straight.
+        # The grid is built ONCE here from the world's static obstacles; it does not track moving bodies
+        # (Phase C will rebuild per-step once there are other robots to avoid).
+        self._grid = world.occupancy_grid() if plan else None
 
     # --- introspection -------------------------------------------------------------------
 
@@ -91,13 +97,30 @@ class Robot:
     # --- skills --------------------------------------------------------------------------
 
     def move_to(self, target: str | Pose) -> None:
-        """Drive to ``target`` — a fixture name, ``"table"``, or an explicit ``(x, y, yaw)`` pose."""
+        """Drive to ``target`` — a fixture name, ``"table"``, or an explicit ``(x, y, yaw)`` pose.
+
+        With planning enabled (``Robot(..., plan=True)``) the route is an A* path around the world's
+        obstacles; otherwise it drives straight (v1 behavior)."""
         goal = target if _is_pose(target) else self.tending_pose(target)  # type: ignore[arg-type]
-        result = drive_to_pose(
-            self.world, goal, gains=self.gains, tolerance=self.tolerance, geom=self.geom
-        )
-        if not result.reached:
-            raise SkillError(f"could not reach {target!r}: {result.position_error:.3f}m off")
+        if self._grid is not None:
+            waypoints = plan_path(self._grid, self.world.robot_pose()[:2], (goal[0], goal[1]))
+            if waypoints is None:
+                raise SkillError(f"no path to {target!r}")
+            result = follow_path(
+                self.world, waypoints, goal[2], gains=self.gains, geom=self.geom,
+                final_tolerance=self.tolerance,
+            )
+            if not result.reached:
+                raise SkillError(
+                    f"could not follow planned path to {target!r}: stalled {result.position_error:.3f}m "
+                    f"off a waypoint"
+                )
+        else:
+            result = drive_to_pose(
+                self.world, goal, gains=self.gains, tolerance=self.tolerance, geom=self.geom
+            )
+            if not result.reached:
+                raise SkillError(f"could not reach {target!r}: {result.position_error:.3f}m off")
 
     def pick(self, machine: str) -> str:
         """Unload the finished part from ``machine`` and carry it.

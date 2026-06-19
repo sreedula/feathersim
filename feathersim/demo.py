@@ -16,9 +16,11 @@ from feathersim.autonomy import TendEvent, run_autonomy
 from feathersim.perception.dataset import IMAGE_SIZE
 from feathersim.perception.infer import Perception
 from feathersim.perception.train import load_or_train_model
+from feathersim.sdk.robot import Robot
 from feathersim.sim.world import World
 
 N_MACHINES = 3
+N_OBSTACLES = 2
 TARGET_PARTS = 6
 
 
@@ -30,9 +32,12 @@ def _print_tend(event: TendEvent) -> None:
 
 
 def main() -> None:
-    print(f"FeatherSim — unattended autonomy loop ({N_MACHINES} machines, target {TARGET_PARTS} parts)\n")
+    print(
+        f"FeatherSim — unattended autonomy loop "
+        f"({N_MACHINES} machines, {N_OBSTACLES} obstacles, target {TARGET_PARTS} parts)\n"
+    )
 
-    world = World(n_machines=N_MACHINES, seed=0)
+    world = World(n_machines=N_MACHINES, seed=0, n_obstacles=N_OBSTACLES)
     try:
         renderer = mujoco.Renderer(world.model, height=IMAGE_SIZE, width=IMAGE_SIZE)
     except Exception as exc:  # no GL context on this host — perception can't render its camera
@@ -41,9 +46,10 @@ def main() -> None:
             "needs a GL context — on a headless host set MUJOCO_GL=egl (or osmesa) and retry."
         ) from exc
     perception = Perception(load_or_train_model())
+    robot = Robot(world, plan=True)  # route around the obstacles via A*
     try:
         report = run_autonomy(
-            world, perception, renderer, target_parts=TARGET_PARTS, on_event=_print_tend
+            world, perception, renderer, target_parts=TARGET_PARTS, robot=robot, on_event=_print_tend
         )
     finally:
         renderer.close()

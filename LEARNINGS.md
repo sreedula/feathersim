@@ -101,6 +101,28 @@ reasoning even though the bound happened to hold. The "never fully hidden / alwa
 **empirical** (tuned so worst case leaves ~13 of 93 light px visible), not derivable from the half-extent.
 Lesson: for anything between the camera and the cue, reason in *image/projected* space, not object space.
 
+## 2026-06-18 — Grid inflation protects the *center*, but a P-controlled follower bows outside the corridor (v2 Phase B)
+A* on a radius-inflated occupancy grid guarantees the robot **center** stays clear of obstacles, and
+`segment_free` validates the straight segments between waypoints. But the waypoint follower drives a
+*proportional curve* toward each waypoint and rounds corners (switching to the next leg within
+`waypoint_tolerance`), so the actual trajectory **bows outside the validated segments** on turns. Result:
+the body clipped a non-colliding pillar by 3 cm on the machine→table legs even though every planned cell
+was free — and because the pillars are `contype=0`, there was no contact, no error, **no test failure**.
+Two-part lesson: (1) inflation-by-radius is necessary but not sufficient when the follower can leave the
+corridor — add a margin for the bow (tighter `waypoint_tolerance` + extra obstacle inflation), and reason
+about the *driven* trajectory, not just the planned path; (2) the bug hid because the clearance test
+sampled **one** leg (table→machine_2, the easy direction) — the loop also drives machine→table, which
+bows worst. Fix: parametrize the safety test over **every** leg the system can drive. A green suite that
+samples one favorable case is worse than no test — it certifies a property that doesn't hold.
+
+## 2026-06-18 — An obstacle next to the goal binds clearance regardless of inflation (v2 Phase B)
+First obstacle placement (0.55, 0.35) sat right beside machine_2's tending-pose corridor (x≈1.0), so the
+robot's *final approach to the goal* grazed the pillar — and no amount of grid inflation helped, because
+the robot must reach the fixed goal pose. Moving the pillars onto the table↔machine diagonals, clear of
+every tending pose, made clearance governed by inflation (tunable) instead of by goal geometry (fixed).
+Also: pillars too close together (±0.5) pinch the narrow central corridor shut at grid resolution,
+trapping the start and making machine_1 unreachable. Placement is a real constraint, not cosmetic — sweep it.
+
 ## 2026-06-18 — Subagents load at session start
 Files added to `.claude/agents/` are NOT available mid-session — they're read when the session
 starts. After creating/editing them, restart Claude Code (or add via `/agents`) before trying to

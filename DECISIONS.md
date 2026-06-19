@@ -168,6 +168,28 @@ see LEARNINGS), so the fast unit suite proves the *mechanism* (DR degrades a cle
 *outcome* from the committed full-scale `metrics.json` rather than retraining in CI. The committed-metrics
 test therefore validates a regenerated artifact, not the live pipeline — an accepted trade for suite speed.
 
+## 2026-06-18 — v2 Phase B: A* on an inflated occupancy grid, opt-in on the Robot
+**Decision:** Global navigation is A* over a boolean **occupancy grid** of the floor (`planning/`,
+pure: `OccupancyGrid`/`build_grid`, `astar`/`plan_path` with octile heuristic, no diagonal
+corner-cutting, and greedy line-of-sight smoothing). Obstacles are axis-aligned `Rect`s — machines,
+table, and static pillars — **inflated by the robot radius** so a center on a free cell ⇒ body clear of
+the real obstacle. A `follow_path` waypoint follower drives the path by reusing the Phase-2
+`drive_to_pose` per leg. Planning is **opt-in** on the SDK (`Robot(..., plan=True)` builds the grid once
+and routes `move_to` around obstacles); default `plan=False` keeps v1's straight-line behavior, so all
+v1 tests/consumers are untouched. The demo runs `World(n_obstacles=2)` + `Robot(plan=True)`.
+**Why:** A* on a grid is the standard, transparent, easily-tested global planner; pure functions keep it
+unit-testable without sim. Reusing `drive_to_pose` per leg avoids a second controller. Opt-in keeps the
+walking skeleton intact and lets the dashboard adopt planning in Phase E (path overlay) rather than now.
+**Tradeoff (and the load-bearing subtlety):** inflation guarantees the *planned path* (straight segments,
+checked via `segment_free`) clears obstacles, but the P-controlled follower **bows outside those segments
+on turns**, so the body can clip even though A* is correct. Closing this took: tightening the follower's
+intermediate `waypoint_tolerance` (0.08→0.04), an **extra obstacle-only inflation margin**
+(`OBSTACLE_CLEARANCE=0.08`, machines/table stay at radius so tending poses remain reachable), and placing
+pillars on the table↔machine diagonals **clear of every tending-pose corridor** (a pillar next to a goal
+binds clearance regardless of inflation). Worst-case body clearance over every driven leg is now ~0.29 m
+vs the 0.2 m radius, enforced by a test parametrized over all legs. The grid is static (built once); Phase
+C will rebuild it per-step for moving robots.
+
 ## 2026-06-18 — Three project subagents for the engineering loop
 **Decision:** Add `test-runner` (haiku), `reviewer` (sonnet), `docs-researcher` (sonnet) in
 `.claude/agents/`. The per-phase loop delegates testing and end-of-phase review to them.
