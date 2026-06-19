@@ -32,13 +32,12 @@ from feathersim.planning import plan_path
 from feathersim.planning.occupancy import Rect
 from feathersim.sdk.robot import PreconditionError, Robot
 from feathersim.sim.machine import MachineState
-from feathersim.sim.world import ROBOT_RADIUS, TIMESTEP, World
+from feathersim.sim.world import ARM_REACH, ARM_REST, ROBOT_RADIUS, TIMESTEP, World
 
-# Arrival slack — must stay ≤ the SDK's `_at` "parked" tolerance (robot._AT_POSITION/_AT_HEADING), so a
-# robot that the SM considers "arrived" also passes pick/place's precondition. If this were loosened above
-# it, place() would raise after a successful pick — crashing the run and leaving the robot visually stuck
-# carrying its part (carried geom never cleared).
-_ARRIVE_POS, _ARRIVE_HEADING = 0.06, 0.15
+# Arrival slack — kept strictly *tighter* than the SDK's `_at` "parked" tolerance (0.06 / 0.15) so a robot
+# the SM calls "arrived" reliably passes pick/place's precondition with boundary margin (rather than landing
+# exactly on the SDK threshold). The arm itself is inert (gravcomp + qvel-zeroed), so it adds no drift.
+_ARRIVE_POS, _ARRIVE_HEADING = 0.035, 0.08
 # Two bodies overlap if their centres are closer than the sum of radii.
 _BODY_CLEARANCE = 2.0 * ROBOT_RADIUS
 _WAYPOINT_TOL = 0.12          # advance to the next stored waypoint within this distance
@@ -230,23 +229,42 @@ class FleetController:
             else:
                 self._drive(k)
         elif ph == "pick":
+            world.stop_base(robot=k)                      # hold parked (zero any residual drive velocity)
+            world.set_arm_target(k, ARM_REACH)            # reach into the machine
+            if not world.arm_at(k, ARM_REACH):
+                return
             try:
-                robot.pick(self.target[k])
+                robot.pick(self.target[k])                # grasp (part now rides the gripper)
             except PreconditionError:
                 self.manager.release(self.target[k])
+                world.set_arm_target(k, ARM_REST)
                 self.phase[k] = "select"
                 return
             self.manager.release(self.target[k])
-            self.phase[k] = "to_table"
-            self._start_leg(k, _table_slot(world, k))
+            world.set_arm_target(k, ARM_REST)             # retract to carry pose
+            self.phase[k] = "pick_lift"
+        elif ph == "pick_lift":
+            world.stop_base(robot=k)
+            if world.arm_at(k, ARM_REST):                 # arm tucked → drive off
+                self.phase[k] = "to_table"
+                self._start_leg(k, _table_slot(world, k))
         elif ph == "place":
-            part = robot.place(self.goal[k])
+            world.stop_base(robot=k)
+            world.set_arm_target(k, ARM_REACH)            # extend over the table
+            if not world.arm_at(k, ARM_REACH):
+                return
+            part = robot.place(self.goal[k])              # release (lands on the stack)
             self.per_robot[k] += 1
             self.per_machine[self.target[k]] += 1
             self.events.append((k, self.target[k], part, round(world.time, 2)))
             if self.on_event is not None:
                 self.on_event(k, self.target[k], part, world.time)
-            self.phase[k] = "select"
+            world.set_arm_target(k, ARM_REST)
+            self.phase[k] = "place_lift"
+        elif ph == "place_lift":
+            world.stop_base(robot=k)
+            if world.arm_at(k, ARM_REST):
+                self.phase[k] = "select"
 
     def step(self) -> None:
         """Advance every robot one tick, step the world once, and update the closest-approach metric."""

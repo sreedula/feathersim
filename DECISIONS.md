@@ -286,6 +286,21 @@ and mixing clean+randomized is the standard cure for the robustness/clean tradeo
 buffer (a few MB). The lighting DR only jitters the *key* light (light 0), matching the index the DR has
 always mutated; the fill light is fixed.
 
+## 2026-06-19 — v3: animated manipulator arms (reach/grasp/retract) in the fleet
+**Decision:** Each robot's arm is a hinged sub-body (shoulder pitch) animated **kinematically** — `World.step`
+slews the arm qpos toward a target (`set_arm_target`/`arm_at`); the fleet SM drives a reach→grasp→retract
+cycle: arrive → `pick` (reach into the machine) → grasp + carried part appears → `pick_lift` (retract) →
+carry to table → `place` (extend over the table) → release + stack grows → retract. The arm body has
+`gravcomp="1"` and its qvel is zeroed each step, so it's dynamically inert (zero base perturbation). Only
+the fleet SM animates; the single-robot autonomy/dashboard keep the arm tucked (still correct).
+**Why:** Kinematic animation (vs torque-controlled IK) is reliable and deterministic — no grasp physics to
+fail, no contact tuning — while looking like real manipulation. gravcomp + qvel-zeroing decouples it from
+the kinematic base cleanly (the alternative, tuned low mass, never hit the exact-static invariant).
+**Tradeoff:** Robots are parked ~0.6 s per pick/place during the animation — they're stationary, so the
+collision-free guarantee is untouched (verified: 8-seed sweep, worst min_sep 0.442, all deliver 6). The
+arm-wait needs the SM arrival tolerance strictly below the SDK `_at` tolerance (boundary margin). The
+single-robot loop can't animate without stepping the world inside `Robot.pick`, so it stays static there.
+
 ## 2026-06-18 — Three project subagents for the engineering loop
 **Decision:** Add `test-runner` (haiku), `reviewer` (sonnet), `docs-researcher` (sonnet) in
 `.claude/agents/`. The per-phase loop delegates testing and end-of-phase review to them.

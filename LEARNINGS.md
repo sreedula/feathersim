@@ -195,6 +195,25 @@ MuJoCo's default offscreen framebuffer is 640×480, so any `mujoco.Renderer(mode
 errors with a message pointing at `<global offheight>`. Set the global once (≥ the largest renderer) and
 all renderers (32/64/560) share it. Cheap (~one 1280² buffer per GL context).
 
+## 2026-06-19 — Decouple a kinematic visual joint from the base with `gravcomp`, not low mass (v3)
+Animating the robot arms (a hinge sub-body, qpos slewed kinematically each `step`), the unactuated base
+started drifting — gravity on the (massed) arm transmits a reaction through the shoulder joint to the free
+planar base. Lowering the arm's density helped but never reached the Phase-1 "base is static to 1e-9"
+invariant. Fix: `<body gravcomp="1">` on the arm — MuJoCo cancels gravity on that body, so it exerts zero
+gravitational reaction, and combined with zeroing the arm DOF's `qvel` each step the arm is **dynamically
+inert** (base drift measured exactly 0). Lesson: to add a visual, kinematically-driven appendage to a
+dynamic body without perturbing it, use `gravcomp` + qvel-zeroing — don't fight it with tuned mass.
+
+## 2026-06-19 — Two different "drifts" looked the same; only one was the arm (v3)
+While fixing the arm-base drift I mis-attributed it: the reach animation's reaction is actually **zero**
+post-gravcomp. The drift I'd seen was (a) the massed arm's gravity *before* gravcomp, and (b) **residual
+drive velocity** — a leftover `qvel` from the prior drive leg integrating over the parked arm-wait. The
+real fixes were `stop_base` on arrival/while parked (kills residual velocity) and gravcomp (kills arm
+reaction); the reviewer caught that my *comments* blamed the arm for the residual-velocity drift. Lesson:
+when a fix works, still verify *why* — a guard built on the wrong mechanism misleads the next editor.
+Also: keep the SM's arrival tolerance strictly *below* the SDK's `_at` "parked" tolerance, so an "arrived"
+robot reliably passes pick/place's precondition (boundary margin), independent of any drift.
+
 ## 2026-06-18 — Subagents load at session start
 Files added to `.claude/agents/` are NOT available mid-session — they're read when the session
 starts. After creating/editing them, restart Claude Code (or add via `/agents`) before trying to

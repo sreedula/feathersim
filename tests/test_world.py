@@ -85,3 +85,18 @@ def test_mjcf_builds_a_fleet():
     xml = build_mjcf(3, 0, 3)
     assert all(f'name="robot_{k}"' in xml for k in range(3))
     assert all(f'base_x_{k}' in xml for k in range(3))
+
+
+def test_arm_slews_to_target_and_holds_the_base():
+    from feathersim.sim.world import ARM_REACH, ARM_REST
+    w = World(n_machines=1, seed=0, n_robots=1)
+    assert w.arm_at(0, ARM_REST)                 # starts tucked in carry pose
+    w.set_arm_target(0, ARM_REACH)
+    for _ in range(80):
+        w.step()
+    assert w.arm_at(0, ARM_REACH)                # reached the grasp pose
+    assert w.robot_pose(0) == pytest.approx((0.0, 0.0, 0.0), abs=1e-6)  # gravcomp → base undisturbed
+    w.set_arm_target(0, ARM_REST)
+    for _ in range(80):
+        w.step()
+    assert w.arm_at(0, ARM_REST)                 # retracted

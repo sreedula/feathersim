@@ -360,3 +360,15 @@ doors; per-robot onboard camera feeds in the dashboard.
 / `deposit_part`. It now reads as a real machine-tending cell. Reviewer SHIP (additive visual; no race, no
 perception leak — verified 0 px into machine crops; carried flag balanced). Added 4 transport tests +
 documented the SM-arrival ≤ SDK-`_at` tolerance coupling. 167 tests green.
+
+## Iteration 3 — Animated arms (reach / grasp / retract)  `[x]`
+
+**Done:** robot arms now visibly **reach into a machine to grasp** on pick and **extend over the table to
+place**. The arm is a hinged sub-body slewed kinematically in `World.step` (`set_arm_target`/`arm_at`); the
+fleet SM runs reach→grasp→retract sub-phases. `gravcomp="1"` + qvel-zeroing make the arm dynamically inert
+(base stays exactly static). Reviewer SHIP — no defects; corrected mis-attributed drift comments (the arm
+adds zero drift; the real culprit was residual drive velocity). Fleet still collision-free + delivers
+(8-seed sweep, worst min_sep 0.442). +1 arm test. 168 tests green.
+
+**Next ideas:** animate the single-robot loop's arm too; per-robot onboard camera feeds; animated machine
+doors; scale to more machines / a bigger cell.

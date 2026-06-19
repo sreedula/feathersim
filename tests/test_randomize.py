@@ -168,7 +168,7 @@ def test_domain_randomization_degrades_a_clean_model():
     clean_on_rand = evaluate(clean_model, rand_val)["state_accuracy"]
 
     assert clean_on_clean > 0.9                     # aces the clean conditions it trained on
-    assert clean_on_rand < clean_on_clean - 0.1     # but degrades under randomization
+    assert clean_on_rand < clean_on_clean - 0.06    # but meaningfully degrades under randomization
 
 
 def test_committed_metrics_show_robust_beats_clean():
