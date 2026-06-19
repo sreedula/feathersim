@@ -2,11 +2,11 @@
   "state_accuracy": {
     "clean_model": {
       "clean": 1.0,
-      "randomized": 0.7444444444444445
+      "randomized": 0.7111111111111111
     },
     "robust_model": {
       "clean": 1.0,
-      "randomized": 0.8444444444444444
+      "randomized": 0.9055555555555556
     }
   },
   "state_majority_baseline": 0.37222222222222223,

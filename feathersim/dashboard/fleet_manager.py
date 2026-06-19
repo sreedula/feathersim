@@ -40,6 +40,7 @@ from feathersim.sim.world import (
 )
 
 SCHEMATIC_SIZE = 460
+FEED_SIZE = 560  # the cinematic 3D overview feed resolution
 
 
 def _hex(rgb: tuple[float, float, float]) -> str:
@@ -66,6 +67,8 @@ class FleetSimManager:
         self._acc_clean = deque(maxlen=n_machines * 40)
         self._render = render
         self._perc_renderer: mujoco.Renderer | None = None  # built on the sim thread (GL affinity)
+        self._feed_renderer: mujoco.Renderer | None = None   # 3D overview feed (also sim-thread)
+        self._overview_cam = self.world.overview_camera(distance=6.2, elevation=-32.0)
 
         self.ctrl = FleetController(
             self.world, self._perceive, strategy=longest_waiting, strategy_name="longest_waiting",
@@ -74,7 +77,8 @@ class FleetSimManager:
 
         self._lock = threading.Lock()
         self._snapshot: dict = self._build_telemetry()
-        self._frame: bytes | None = None
+        self._frame: bytes | None = None        # schematic JPEG
+        self._frame3d: bytes | None = None       # cinematic 3D overview JPEG
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
 
@@ -118,6 +122,7 @@ class FleetSimManager:
     def _run(self) -> None:
         if self._render:
             self._perc_renderer = mujoco.Renderer(self.world.model, IMAGE_SIZE, IMAGE_SIZE)
+            self._feed_renderer = mujoco.Renderer(self.world.model, FEED_SIZE, FEED_SIZE)
         try:
             while not self._stop.is_set():
                 start = time.perf_counter()
@@ -127,9 +132,10 @@ class FleetSimManager:
                 budget = self.steps_per_publish * TIMESTEP / self.speed
                 time.sleep(max(0.0, budget - (time.perf_counter() - start)))
         finally:
-            if self._perc_renderer is not None:
-                self._perc_renderer.close()
-            self._perc_renderer = None
+            for r in (self._perc_renderer, self._feed_renderer):
+                if r is not None:
+                    r.close()
+            self._perc_renderer = self._feed_renderer = None
 
     # --- controls (HTTP threads) ---------------------------------------------------------
 
@@ -155,13 +161,30 @@ class FleetSimManager:
         with self._lock:
             return self._frame
 
+    def frame3d(self) -> bytes | None:
+        with self._lock:
+            return self._frame3d
+
     # --- publishing ----------------------------------------------------------------------
 
     def _publish(self) -> None:
         telemetry = self._build_telemetry()
         frame = self._render_schematic()
+        frame3d = self._render_3d() if self._feed_renderer is not None else None
         with self._lock:
             self._snapshot, self._frame = telemetry, frame
+            if frame3d is not None:
+                self._frame3d = frame3d
+
+    def _render_3d(self) -> bytes:
+        # Restore the clean cinematic scene (a perception read may have left it randomized) and paint the
+        # status lights to live machine state, then render the overview.
+        self.world.reset_scene()
+        self.world.sync_visuals()
+        rgb = self.world.render(self._feed_renderer, self._overview_cam)
+        buf = io.BytesIO()
+        Image.fromarray(rgb).save(buf, format="JPEG", quality=82)
+        return buf.getvalue()
 
     def _build_telemetry(self) -> dict:
         world, ctrl = self.world, self.ctrl

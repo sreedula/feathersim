@@ -91,9 +91,7 @@ def load_or_train_model() -> PerceptionCNN:
     if MODEL_PATH.exists():
         model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
         return model.eval()
-    train_ds, val_ds = train_val_split(
-        generate_dataset(n_samples=480, seed=0, randomizer=DomainRandomizer()), seed=0
-    )
+    train_ds, val_ds = train_val_split(robust_training_set(seed=0, n_each=300), seed=0)
     model, _ = train(train_ds, val_ds, seed=0)
     return model.eval()
 
@@ -115,16 +113,34 @@ def _state_acc(model: PerceptionCNN, ds: Dataset) -> float:
     return evaluate(model, ds)["state_accuracy"]
 
 
+def _concat(a: Dataset, b: Dataset) -> Dataset:
+    """Concatenate two datasets — used to train the robust model on a clean+randomized *mix*, so it keeps
+    clean accuracy while gaining robustness (training on only-randomized data costs too much clean acc)."""
+    return Dataset(
+        np.concatenate([a.images, b.images]),
+        np.concatenate([a.state_labels, b.state_labels]),
+        np.concatenate([a.part_labels, b.part_labels]),
+    )
+
+
+def robust_training_set(seed: int = 0, n_each: int = 360) -> Dataset:
+    """A clean+randomized mix (``n_each`` of each) — the robust model's training data."""
+    clean = generate_dataset(n_samples=n_each, seed=seed)
+    randomized = generate_dataset(n_samples=n_each, seed=seed + 1, randomizer=DomainRandomizer())
+    return _concat(clean, randomized)
+
+
 def main() -> None:
     # Train two equally-sized models: clean (v1 recipe) and robust (domain-randomized), then evaluate
     # both on a clean held-out set AND a randomized one — the 2×2 before/after matrix (v2 Phase A).
     clean_tr, clean_val = train_val_split(generate_dataset(n_samples=720, seed=0), seed=0)
-    rand_tr, rand_val = train_val_split(
+    _, rand_val = train_val_split(
         generate_dataset(n_samples=720, seed=0, randomizer=DomainRandomizer()), seed=0
     )
 
     clean_model, _ = train(clean_tr, clean_val, seed=0)
-    robust_model, _ = train(rand_tr, rand_val, seed=0)
+    # Robust model: clean+randomized mix → robust on randomized *and* unhurt on clean.
+    robust_model, _ = train(robust_training_set(seed=0, n_each=540), rand_val, seed=0)
 
     metrics = {
         "state_accuracy": {

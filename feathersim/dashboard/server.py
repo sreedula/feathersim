@@ -90,17 +90,19 @@ def create_app(manager: SimManager | None = None) -> FastAPI:
     return app
 
 
-def _mjpeg(manager: SimManager, *, fps: float = 20.0):
-    """Yield the manager's latest JPEG as an MJPEG multipart stream (a sync generator Starlette
-    iterates in a threadpool, so the ``sleep`` paces frames without blocking the event loop).
+def _mjpeg(manager, *, fps: float = 20.0, frame_getter=None):
+    """Yield a manager's latest JPEG as an MJPEG multipart stream (a sync generator Starlette iterates in
+    a threadpool, so the ``sleep`` paces frames without blocking the event loop). ``frame_getter`` selects
+    which frame to stream (defaults to ``manager.frame``; the command center also streams ``frame3d``).
 
-    Ends when the manager stops so shutdown can't leave a live generator spinning; Starlette also
-    stops pulling it when the browser disconnects.
+    Ends when the manager stops so shutdown can't leave a live generator spinning; Starlette also stops
+    pulling it when the browser disconnects.
     """
+    get_frame = frame_getter or manager.frame
     head = f"--{_MJPEG_BOUNDARY}\r\nContent-Type: image/jpeg\r\n\r\n".encode()
     period = 1.0 / fps
     while manager.is_running():
-        frame = manager.frame()
+        frame = get_frame()
         if frame is not None:
             yield head + frame + b"\r\n"
         time.sleep(period)

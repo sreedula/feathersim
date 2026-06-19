@@ -1,8 +1,8 @@
-"""Record the multi-robot fleet command-center schematic to an animated GIF for the README. [v2]
+"""Record the multi-robot fleet to an animated GIF for the README — the cinematic 3D overview. [v2/v3]
 
-Steps the real :class:`FleetController` (3 robots, open floor) and captures the top-down schematic — robots,
-planned paths, machines colored by true state — frame by frame. Needs a GL context for the per-robot
-perception (set ``MUJOCO_GL=egl``/``osmesa`` on a headless host). Run from repo root::
+Steps the real :class:`FleetController` (3 robots, open floor) and captures the 3D cell — robots, machines
+(status-light dome = state), parts, reflective floor — frame by frame. Needs a GL context (set
+``MUJOCO_GL=egl``/``osmesa`` on a headless host). Run from repo root::
 
     python3 scripts/record_fleet_gif.py --out docs/fleet.gif
 """
@@ -27,20 +27,29 @@ def main() -> None:
     ap.add_argument("--steps", type=int, default=2600, help="sim ticks to record")
     ap.add_argument("--stride", type=int, default=14, help="capture one frame every N ticks")
     ap.add_argument("--fps", type=float, default=14.0)
+    ap.add_argument("--size", type=int, default=440, help="GIF frame size (px)")
     ap.add_argument("--difficulty", type=float, default=0.4)
     ap.add_argument("--out", type=pathlib.Path, default=pathlib.Path("docs/fleet.gif"))
     args = ap.parse_args()
 
+    from PIL import Image
+
     mgr = FleetSimManager(render=False, n_robots=args.robots, difficulty=args.difficulty)
     mgr._perc_renderer = mujoco.Renderer(mgr.world.model, IMAGE_SIZE, IMAGE_SIZE)
+    feed = mujoco.Renderer(mgr.world.model, args.size, args.size)
     frames = []
     try:
         for step in range(args.steps):
             mgr.ctrl.step()
             if step % args.stride == 0:
-                frames.append(mgr._schematic_image().convert("P", palette=1))  # web palette → small GIF
+                mgr.world.reset_scene()       # clean cinematic scene (a perceive may have randomized it)
+                mgr.world.sync_visuals()      # status lights to live state
+                rgb = mgr.world.render(feed, mgr._overview_cam)
+                # Fixed adaptive palette, no dithering → static floor/sky delta-compress well across frames.
+                frames.append(Image.fromarray(rgb).quantize(colors=96, dither=Image.Dither.NONE))
     finally:
         mgr._perc_renderer.close()
+        feed.close()
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     head, *tail = frames

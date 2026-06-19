@@ -263,6 +263,29 @@ for a fleet view). The cross-thread control writes (`velocity_fn`, `difficulty`)
 intentionally lock-free under the GIL (documented). The slider's `at_difficulty` scales probabilities +
 dominant magnitudes but keeps occluder/blur extents fixed (presence is the dominant lever).
 
+## 2026-06-19 — v3: cinematic world + live 3D feed, relative-lighting DR, mix-trained robust model
+**Decision:** Make the sim *look* like a real robotics sim and surface it live. `build_mjcf` now emits a
+`<visual>` (shadows, `<global offwidth/offheight>` for high-res offscreen render, haze) + `<asset>` block
+(gradient skybox, checker floor texture, glossy per-body materials), two directional lights (one casts
+shadows), and a robot "dome" — purely visual; the status-light/part rgba that perception reads are
+unchanged. The command center streams a **live 3D overview feed** (`/api/camera3d`, hero) alongside the
+top-down schematic (tactical). Perception was retrained on the new look (auto-labeling absorbs it).
+Two perception fixes fell out of it:
+1. **Relative-lighting DR.** DR jitters the key light *relative to its authored cinematic pose* (offset +
+   diffuse scale), and `reset_scene` restores the authored pose. So the 3D feed stays correctly lit, the
+   perception clean-baseline equals the feed's lighting (no train/serve gap), and `at_difficulty(0)` is
+   exactly the authored scene. (The reviewer caught that the old `reset_scene` clobbered the new key light
+   with stale `(0,0,4)` constants — a test now pins the authored-light restore.)
+2. **Mix-trained robust model.** Training the robust model on *only* randomized data cost ~10% clean
+   accuracy (the tiny CNN can't be both). Training it on a **clean+randomized mix** gives **1.0 on clean
+   AND 0.91 under DR** (+19 pts over the clean model) — robustness with no clean regression.
+**Why:** A 2D schematic reads clearly but doesn't say "real sim"; the 3D feed does, and the schematic
+stays for paths/assignments. Relative lighting is the right primitive (jitter around the authored value),
+and mixing clean+randomized is the standard cure for the robustness/clean tradeoff.
+**Tradeoff:** Two renderers per dashboard (perception 64px + feed 560px) and a fixed ~1280² offscreen
+buffer (a few MB). The lighting DR only jitters the *key* light (light 0), matching the index the DR has
+always mutated; the fill light is fixed.
+
 ## 2026-06-18 — Three project subagents for the engineering loop
 **Decision:** Add `test-runner` (haiku), `reviewer` (sonnet), `docs-researcher` (sonnet) in
 `.claude/agents/`. The per-phase loop delegates testing and end-of-phase review to them.

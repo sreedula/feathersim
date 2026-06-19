@@ -57,31 +57,36 @@ class Occluder:
 
 @dataclass(frozen=True)
 class SceneRandomization:
-    """A fully-specified randomized scene for one sample: light + per-machine occluders (``None`` = none)."""
+    """A fully-specified randomized scene for one sample: a relative key-light jitter + a per-machine
+    occluder slot (``None`` = none)."""
 
-    light_pos_xy: tuple[float, float]
-    light_diffuse: tuple[float, float, float]
+    light_offset_xy: tuple[float, float]
+    light_diffuse_scale: float
     occluders: tuple[Occluder | None, ...]
 
 
 @dataclass(frozen=True)
 class DomainRandomizer:
-    """Config + samplers for domain randomization. Defaults are tuned to be hard but solvable."""
+    """Config + samplers for domain randomization. Defaults are tuned to be hard but solvable.
 
-    # scene-light
-    light_xy_jitter: float = 1.6                      # ± metres on the light's x and y
-    light_intensity: tuple[float, float] = (0.45, 1.05)   # diffuse magnitude (default clean = 0.9)
-    light_tint: float = 0.22                          # max per-channel deviation around the magnitude
-    # occluder
-    occluder_prob: float = 0.5
-    # Half-extent + offset bounded so the occluder only ever *partially* covers the light. NB the box
-    # sits ~0.12 m in front of the light, so its projected shadow is larger than its physical size;
-    # these bounds are tuned empirically (worst case leaves ~13 of 93 light px visible — see
-    # tests/test_randomize.py / LEARNINGS.md), not derived from the half-extent alone.
+    DR corrupts three things: the **key light** (shifted/dimmed *relative* to its authored cinematic pose,
+    so the clean render baseline is preserved), the **status-light occluder** (scene stage), and **sensor
+    noise/blur** (pixel stage). Lighting variation is what the robust model learns to handle and the clean
+    one can't — the dominant source of the robust-vs-clean accuracy gap.
+    """
+
+    # key light (relative to authored)
+    light_xy_jitter: float = 1.2                       # ± metres shift on the light's x and y
+    light_scale: tuple[float, float] = (0.6, 1.2)      # diffuse multiplier (1.0 = authored brightness)
+    # occluder — must only *partially* cover the light (a full cover is unlabelable and hurts even the
+    # robust model). NB the box sits ~0.12 m in front of the light, so its projected shadow is bigger than
+    # its half-extent; these bounds are tuned empirically (worst case still leaves the light partly visible
+    # — see tests/test_randomize.py / LEARNINGS.md), not derived from the half-extent alone.
+    occluder_prob: float = 0.55
     occluder_size: tuple[float, float] = (0.03, 0.09)
     occluder_offset: float = 0.10                     # max |dx|, |dz| lateral/vertical offset
     # sensor
-    noise_sigma: tuple[float, float] = (4.0, 26.0)
+    noise_sigma: tuple[float, float] = (4.0, 27.0)
     blur_prob: float = 0.55
     blur_length: tuple[int, int] = (3, 9)             # kernel length in px (inclusive)
 
@@ -89,31 +94,20 @@ class DomainRandomizer:
     def at_difficulty(cls, difficulty: float) -> "DomainRandomizer":
         """A randomizer scaled by ``difficulty`` ∈ [0, 1] — 0 is clean (no corruption), 1 is full DR.
 
-        Lets the dashboard dial perception difficulty live: every probability and the dominant magnitudes
-        (light jitter/tint, noise σ) scale with ``difficulty``, and the light interpolates from the clean
-        default (0.9) toward the full range. Occluder/blur *extents* keep their defaults — presence, dialed
-        by probability, is the dominant lever — so a low-difficulty scene rarely shows one at all.
+        Lets the dashboard dial perception difficulty live: occluder presence, noise σ, and blur probability
+        all scale with ``difficulty`` (occluder/blur *extents* keep their defaults — presence is the
+        dominant lever, so a low-difficulty scene rarely shows one at all).
         """
         d = max(0.0, min(1.0, difficulty))
         return cls(
-            light_xy_jitter=1.6 * d,
-            light_intensity=(0.9 - 0.45 * d, 0.9 + 0.15 * d),
-            light_tint=0.22 * d,
-            occluder_prob=0.5 * d,
-            noise_sigma=(0.0, 26.0 * d),
-            blur_prob=0.55 * d,
+            light_xy_jitter=1.2 * d, light_scale=(1.0 - 0.4 * d, 1.0 + 0.2 * d),
+            occluder_prob=0.5 * d, noise_sigma=(0.0, 27.0 * d), blur_prob=0.55 * d,
         )
 
     def sample_scene(self, rng: np.random.Generator, n_machines: int) -> SceneRandomization:
-        """Sample a randomized scene (light + one occluder slot per machine)."""
-        x, y = rng.uniform(-self.light_xy_jitter, self.light_xy_jitter, size=2)
-        base = float(rng.uniform(*self.light_intensity))
-        d = rng.uniform(-self.light_tint, self.light_tint, size=3)
-        diffuse = (
-            float(np.clip(base + d[0], 0.1, 1.4)),
-            float(np.clip(base + d[1], 0.1, 1.4)),
-            float(np.clip(base + d[2], 0.1, 1.4)),
-        )
+        """Sample a randomized scene — a relative key-light jitter + one occluder slot per machine."""
+        offset = tuple(rng.uniform(-self.light_xy_jitter, self.light_xy_jitter, size=2))
+        diffuse_scale = float(rng.uniform(*self.light_scale))
         occluders = tuple(
             (
                 Occluder(
@@ -126,7 +120,7 @@ class DomainRandomizer:
             )
             for _ in range(n_machines)
         )
-        return SceneRandomization((float(x), float(y)), diffuse, occluders)
+        return SceneRandomization((float(offset[0]), float(offset[1])), diffuse_scale, occluders)
 
     def corrupt_image(self, image: np.ndarray, rng: np.random.Generator) -> np.ndarray:
         """Apply sensor noise then (probabilistically) motion blur to a rendered uint8 crop."""
@@ -138,8 +132,8 @@ class DomainRandomizer:
 
 
 def apply_scene(world, scene: SceneRandomization) -> None:
-    """Push a sampled :class:`SceneRandomization` onto ``world`` (lighting + every machine's occluder)."""
-    world.randomize_lighting(scene.light_pos_xy, scene.light_diffuse)
+    """Push a sampled :class:`SceneRandomization` onto ``world`` — relative key-light jitter + occluders."""
+    world.randomize_lighting(scene.light_offset_xy, scene.light_diffuse_scale)
     for i, occ in enumerate(scene.occluders):
         if occ is None:
             world.set_occluder(i, present=False)

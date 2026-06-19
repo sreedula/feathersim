@@ -40,8 +40,6 @@ _PART_RGBA = (0.15, 0.35, 0.95, 1.0)  # vivid blue — high contrast vs floor, d
 # default (alpha 0). The dataset generator places & shows it to partially block the light.
 _OCCLUDER_BASE = (0.0, -0.34, 0.44)   # local pos in the machine body, between camera and status light
 _OCCLUDER_RGB = (0.18, 0.18, 0.20)    # neutral dark — clearly an occluder, never mistaken for a state color
-_LIGHT_POS_DEFAULT = (0.0, 0.0, 4.0)      # worldbody <light> defaults (restored by reset_scene)
-_LIGHT_DIFFUSE_DEFAULT = (0.9, 0.9, 0.9)
 
 ROBOT_RADIUS = 0.2                        # base cylinder radius — the occupancy-grid inflation
 # Extra inflation for the static pillars beyond the robot radius. The waypoint follower drives a
@@ -87,9 +85,10 @@ def _robot_mjcf(n_robots: int) -> str:
       <joint name="base_x_{k}" type="slide" axis="1 0 0"/>
       <joint name="base_y_{k}" type="slide" axis="0 1 0"/>
       <joint name="base_yaw_{k}" type="hinge" axis="0 0 1"/>
-      <geom type="cylinder" size="0.2 0.12" rgba="{r} {g} {b} 1"/>
+      <geom type="cylinder" size="0.2 0.12" material="robotmat_{k}"/>
+      <geom type="cylinder" pos="0 0 0.12" size="0.13 0.03" material="robotmat_{k}"/>
       <geom name="heading_{k}" type="box" pos="0.16 0 0.12" size="0.06 0.05 0.02"
-            rgba="0.95 0.85 0.20 1"/>
+            rgba="0.97 0.85 0.15 1"/>
     </body>"""
         )
     return "".join(out)
@@ -117,10 +116,40 @@ def _obstacle_mjcf(n_obstacles: int) -> str:
             f"""
     <body name="obstacle_{i}" pos="{ox} {oy} 0.35">
       <geom type="box" size="{_OBSTACLE_HALF} {_OBSTACLE_HALF} 0.35"
-            contype="0" conaffinity="0" rgba="0.85 0.35 0.10 1"/>
+            contype="0" conaffinity="0" material="pillarmat"/>
     </body>"""
         )
     return "".join(out)
+
+
+def _assets_mjcf(n_machines: int, n_robots: int) -> str:
+    """Cinematic visual setup: shadows + a gradient skybox, a textured floor, and glossy per-body
+    materials. Purely visual (the status-light/part colors that perception reads are unchanged)."""
+    mats = []
+    for i in range(n_machines):
+        r, g, b = _MACHINE_COLORS[i % len(_MACHINE_COLORS)]
+        mats.append(f'<material name="machmat_{i}" rgba="{r} {g} {b} 1" specular="0.5" shininess="0.55" reflectance="0.12"/>')
+    for k in range(n_robots):
+        r, g, b = _ROBOT_COLORS[k % len(_ROBOT_COLORS)]
+        mats.append(f'<material name="robotmat_{k}" rgba="{r} {g} {b} 1" specular="0.75" shininess="0.85" reflectance="0.2"/>')
+    materials = "\n    ".join(mats)
+    return f"""
+  <visual>
+    <global offwidth="1280" offheight="1280"/>
+    <headlight diffuse="0.3 0.3 0.33" ambient="0.33 0.33 0.35" specular="0.2 0.2 0.2"/>
+    <quality shadowsize="4096" offsamples="8"/>
+    <map force="0.1" zfar="40"/>
+    <rgba haze="0.10 0.13 0.18 1"/>
+  </visual>
+  <asset>
+    <texture name="skybox" type="skybox" builtin="gradient" rgb1="0.34 0.45 0.58" rgb2="0.03 0.05 0.09" width="512" height="512"/>
+    <texture name="floortex" type="2d" builtin="checker" rgb1="0.15 0.17 0.21" rgb2="0.21 0.23 0.27" width="512" height="512"/>
+    <material name="floormat" texture="floortex" texrepeat="14 14" specular="0.2" shininess="0.3" reflectance="0.12"/>
+    <material name="tablemat" rgba="0.50 0.35 0.20 1" specular="0.3" shininess="0.4"/>
+    <material name="doormat" rgba="0.09 0.09 0.12 1" specular="0.6" shininess="0.85"/>
+    <material name="pillarmat" rgba="0.90 0.42 0.13 1" specular="0.3" shininess="0.5"/>
+    {materials}
+  </asset>"""
 
 
 def build_mjcf(n_machines: int, n_obstacles: int = 0, n_robots: int = 1) -> str:
@@ -133,9 +162,8 @@ def build_mjcf(n_machines: int, n_obstacles: int = 0, n_robots: int = 1) -> str:
         bodies.append(
             f"""
     <body name="machine_{i}" pos="{mx} {my} 0.3">
-      <geom type="box" size="0.3 0.3 0.3" rgba="{r} {g} {b} 1"/>
-      <geom name="door_{i}" type="box" pos="0 -0.31 -0.05" size="0.25 0.02 0.22"
-            rgba="0.12 0.12 0.14 1"/>
+      <geom type="box" size="0.3 0.3 0.3" material="machmat_{i}"/>
+      <geom name="door_{i}" type="box" pos="0 -0.31 -0.05" size="0.25 0.02 0.22" material="doormat"/>
       <geom name="light_{i}" type="sphere" pos="0 -0.22 0.44" size="0.13"
             contype="0" conaffinity="0" rgba="{light_rgba}"/>
       <geom name="part_{i}" type="box" pos="0 -0.42 0.02" size="0.13 0.13 0.11"
@@ -147,12 +175,14 @@ def build_mjcf(n_machines: int, n_obstacles: int = 0, n_robots: int = 1) -> str:
         )
     return f"""
 <mujoco model="feathersim">
-  <option timestep="{TIMESTEP}" gravity="0 0 -9.81"/>
+  <option timestep="{TIMESTEP}" gravity="0 0 -9.81"/>{_assets_mjcf(n_machines, n_robots)}
   <worldbody>
-    <light pos="0 0 4" dir="0 0 -1" diffuse="0.9 0.9 0.9"/>
-    <geom name="floor" type="plane" size="5 5 0.1" rgba="0.82 0.82 0.86 1"/>{_robot_mjcf(n_robots)}
+    <light pos="1.5 1.0 5" dir="-0.25 -0.2 -1" directional="true" diffuse="0.65 0.65 0.68"
+           specular="0.3 0.3 0.3" castshadow="true"/>
+    <light pos="-2.5 -1.5 3.5" dir="0.4 0.25 -1" diffuse="0.22 0.24 0.30" castshadow="false"/>
+    <geom name="floor" type="plane" size="6 6 0.1" material="floormat"/>{_robot_mjcf(n_robots)}
     <body name="table" pos="{TABLE_XY[0]} {TABLE_XY[1]} 0.2">
-      <geom type="box" size="0.5 0.3 0.2" rgba="0.60 0.42 0.24 1"/>
+      <geom type="box" size="0.5 0.3 0.2" material="tablemat"/>
     </body>{"".join(bodies)}{_obstacle_mjcf(n_obstacles)}
   </worldbody>
 </mujoco>"""
@@ -211,6 +241,10 @@ class World:
             mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f"occluder_{i}")
             for i in range(self.n_machines)
         ]
+        # Authored cinematic key light (light 0) — DR jitters *relative* to this and reset_scene restores
+        # it, so perception sees a clean baseline equal to the feed's lighting (no train/serve gap).
+        self._light0_pos = self.model.light_pos[0].copy()
+        self._light0_diffuse = self.model.light_diffuse[0].copy()
 
         # Seed-driven machine timings: deterministic, but varied so machines don't finish in lockstep.
         rng = np.random.default_rng(self.seed)
@@ -321,11 +355,12 @@ class World:
 
     # --- domain randomization (v2 Phase A) ------------------------------------------------
 
-    def randomize_lighting(self, pos_xy: tuple[float, float], diffuse: tuple[float, float, float]) -> None:
-        """Move the scene light to ``pos_xy`` (x, y; z kept) and set its diffuse color/intensity."""
-        self.model.light_pos[0, 0] = pos_xy[0]
-        self.model.light_pos[0, 1] = pos_xy[1]
-        self.model.light_diffuse[0] = diffuse
+    def randomize_lighting(self, offset_xy: tuple[float, float], diffuse_scale: float) -> None:
+        """Jitter the key light *relative to its authored pose*: shift it by ``offset_xy`` and scale its
+        diffuse by ``diffuse_scale``. ``((0, 0), 1.0)`` is the authored cinematic light."""
+        self.model.light_pos[0, 0] = self._light0_pos[0] + offset_xy[0]
+        self.model.light_pos[0, 1] = self._light0_pos[1] + offset_xy[1]
+        self.model.light_diffuse[0] = self._light0_diffuse * diffuse_scale
 
     def set_occluder(self, i: int, *, present: bool, dx: float = 0.0, dz: float = 0.0,
                      size: float = 0.05) -> None:
@@ -338,8 +373,8 @@ class World:
         self.model.geom_rgba[gid, 3] = 1.0 if present else 0.0
 
     def reset_scene(self) -> None:
-        """Restore default lighting and hide every occluder (back to the clean render conditions)."""
-        self.randomize_lighting(_LIGHT_POS_DEFAULT[:2], _LIGHT_DIFFUSE_DEFAULT)
+        """Restore the authored cinematic key light and hide every occluder — the clean render conditions."""
+        self.randomize_lighting((0.0, 0.0), 1.0)
         for i in range(self.n_machines):
             self.set_occluder(i, present=False)
 

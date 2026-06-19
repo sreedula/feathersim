@@ -6,11 +6,12 @@ mobile robots autonomously tend several CNC-style machines. It ships a developer
 **A\* path planning**, an unattended **single- and multi-robot autonomy** stack, a **behavior-cloned**
 controller, and a browser **command center**. Pure simulation — no real hardware.
 
-![The multi-robot fleet command center](docs/fleet.gif)
+![The multi-robot fleet, rendered live](docs/fleet.gif)
 
-*Three robots tend three machines unattended and collision-free: each perceives machine state from its
-own camera, a fleet manager assigns work (never double-booking), and A\* plans each robot's path
-(overlaid). Watch it live — with a controller toggle and a perception-difficulty slider — at `make dashboard`.*
+*Three robots tend three machines unattended and collision-free (status-light dome = machine state). Each
+perceives from its own camera, a fleet manager assigns work without double-booking, and A\* plans each
+path. The command center streams this **live 3D view** plus a tactical top-down with paths overlaid — with
+a hand-coded↔learned controller toggle and a perception-difficulty slider — at `make dashboard`.*
 
 ## Quickstart
 
@@ -53,10 +54,10 @@ A walking skeleton built in vertical slices — runnable and demoable at every p
   seeded runs), and ≥2 scheduling strategies measured for throughput.
 - **Learned policy.** Behavior cloning of the hand-coded controller; the learned brain drives the entire
   autonomy loop end-to-end. *(Offline loss didn't predict closed-loop success — a lesson logged.)*
-- **Command center.** This dashboard: all robots + planned paths overlaid, per-robot perceived-vs-true
-  state, live task assignments, a **hand-coded ↔ learned** controller toggle, and a **perception-difficulty
-  slider** that dials domain randomization up/down live — drag it and watch the clean model's accuracy
-  drop while the robust model holds.
+- **Command center.** This dashboard: a **live cinematic 3D feed** of the cell + a tactical top-down with
+  planned paths overlaid, per-robot perceived-vs-true state, live task assignments, a **hand-coded ↔
+  learned** controller toggle, and a **perception-difficulty slider** that dials domain randomization
+  up/down live — drag it and watch the clean model's accuracy drop while the robust model holds.
 
 ## How the loop closes
 

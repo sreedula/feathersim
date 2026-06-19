@@ -18,7 +18,7 @@
   @media (max-width:900px){.wrap{grid-template-columns:1fr}}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:16px}
   .panel h2{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin:0 0 10px;font-weight:600}
-  #schematic{width:100%;border-radius:8px;display:block;background:#000;aspect-ratio:1/1}
+  #feed3d,#schematic{width:100%;border-radius:8px;display:block;background:#000;aspect-ratio:1/1}
   .legend{display:flex;gap:14px;margin-top:8px;font-size:12px;color:var(--muted);flex-wrap:wrap}
   .dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:5px;vertical-align:middle}
   .stat{display:flex;justify-content:space-between;border-bottom:1px dashed var(--line);padding:3px 0}
@@ -48,14 +48,18 @@
 <div class="wrap">
   <div>
     <div class="panel">
-      <h2>Cell — top-down (planned paths overlaid)</h2>
-      <img id="schematic" src="/api/camera" alt="fleet schematic" onerror="this.style.opacity=.3" />
+      <h2>Live — 3D cell</h2>
+      <img id="feed3d" src="/api/camera3d" alt="3D cell feed" onerror="this.style.opacity=.3" />
       <div class="legend">
         <span><span class="dot" style="background:var(--idle)"></span>idle</span>
         <span><span class="dot" style="background:var(--running)"></span>running</span>
         <span><span class="dot" style="background:var(--done)"></span>done</span>
-        <span>colored circles = robots (line = heading, path = plan)</span>
+        <span>status-light dome = machine state · parts on the bed</span>
       </div>
+    </div>
+    <div class="panel">
+      <h2>Tactical — top-down (planned paths overlaid)</h2>
+      <img id="schematic" src="/api/camera" alt="fleet schematic" onerror="this.style.opacity=.3" />
     </div>
     <div class="panel">
       <h2>Machines — true vs. perceived</h2>

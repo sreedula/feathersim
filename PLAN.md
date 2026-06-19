@@ -334,3 +334,20 @@ randomization up/down live and shows accuracy reacting. All live in the browser.
 84.4% vs clean 74.4% under DR) → A* path planning + obstacle avoidance → multi-robot fleet (collision-free
 over 160 seeded runs, scheduling measured) → behavior-cloned policy (112% of expert throughput) →
 command-center dashboard (paths, per-robot perception, controller toggle, live difficulty slider).
+
+---
+
+# v3 — "make it look like a real sim" (ongoing polish loop)
+
+## Iteration 1 — Cinematic world + live 3D feed  `[x]`
+
+**Done:** glossy materials, gradient skybox, checker floor with reflections, shadows, two-tier robots
+(`build_mjcf` `<visual>`/`<asset>`); a **live 3D overview feed** in the command center (`/api/camera3d`,
+the hero view) alongside the tactical schematic. Perception retrained on the new look. Two perception
+upgrades: **relative-lighting DR** (key light jittered around its authored pose; `reset_scene` restores it
+→ no train/serve gap, feed stays lit) and a **mix-trained robust model** (clean+randomized → **1.0 clean,
+0.91 under DR, +19 pts** over the clean model). Reviewer caught the `reset_scene` key-light clobber; fixed
++ pinned by a test. 163 tests green; demos + dashboard verified.
+
+**Next ideas:** manipulator arms + physical part transport; a parts stack on the table; animated machine
+doors; per-robot onboard camera feeds in the dashboard.

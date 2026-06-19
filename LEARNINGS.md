@@ -180,6 +180,21 @@ render → corrupt_image) made accuracy react sharply (clean 1.0→0.79). Lesson
 doesn't move your metric, check you're applying the part of the pipeline that carries the signal — here the
 hard corruption was 3D-scene-side, not pixel-side, and I'd wired up only the cheap half.
 
+## 2026-06-19 — Train robust on a clean+randomized MIX, not only-randomized (v3)
+Hardening perception with the cinematic visuals, training the robust model on *only* domain-randomized
+data plateaued it at ~0.9 on clean (it traded ~10% clean accuracy for robustness — the tiny CNN can't be
+perfectly both). Pushing the DR harder only widened the slider gap by *lowering* the deployed model's
+clean accuracy — wrong tradeoff. Fix: train the robust model on a **50/50 clean+randomized mix** → 1.0 on
+clean *and* 0.91 under DR (+19 pts over the clean model). Lesson: don't make the deployed model robust by
+making it worse at the easy case; mix easy + hard so it's good at both. Tune DR for the *gap*, not by
+sacrificing clean.
+
+## 2026-06-19 — A high-res offscreen render needs `<global offwidth/offheight>` (v3)
+Rendering the 560px 3D feed failed silently until I added `<visual><global offwidth/offheight 1280>` —
+MuJoCo's default offscreen framebuffer is 640×480, so any `mujoco.Renderer(model, h, w)` with h or w > 480
+errors with a message pointing at `<global offheight>`. Set the global once (≥ the largest renderer) and
+all renderers (32/64/560) share it. Cheap (~one 1280² buffer per GL context).
+
 ## 2026-06-18 — Subagents load at session start
 Files added to `.claude/agents/` are NOT available mid-session — they're read when the session
 starts. After creating/editing them, restart Claude Code (or add via `/agents`) before trying to

@@ -79,6 +79,16 @@ def create_app(manager: FleetSimManager | None = None) -> FastAPI:
             _mjpeg(mgr), media_type=f"multipart/x-mixed-replace; boundary={_MJPEG_BOUNDARY}"
         )
 
+    @app.get("/api/camera3d")
+    async def camera3d(request: Request) -> StreamingResponse:
+        mgr = _manager(request)
+        if mgr.frame3d() is None:
+            raise HTTPException(status_code=503, detail="3D feed unavailable (rendering disabled)")
+        return StreamingResponse(
+            _mjpeg(mgr, frame_getter=mgr.frame3d),
+            media_type=f"multipart/x-mixed-replace; boundary={_MJPEG_BOUNDARY}",
+        )
+
     return app
 
 
