@@ -372,3 +372,11 @@ adds zero drift; the real culprit was residual drive velocity). Fleet still coll
 
 **Next ideas:** animate the single-robot loop's arm too; per-robot onboard camera feeds; animated machine
 doors; scale to more machines / a bigger cell.
+
+## Iteration 4 — Per-robot onboard camera feeds  `[x]`
+
+**Done:** each robot has a forward-facing onboard `<camera>`; the command center renders all of them into
+a colour-labelled strip (`/api/robotcams`) shown under the 3D feed — each robot's eye-view of the machine
+it's tending, its own gripper reaching in, and the part. Same thread-safe sim-thread-render → cached-bytes
+pattern as the 3D feed; non-physical cameras, no perception/logic impact. +1 test (strip is 3×CAM_SIZE).
+169 tests green.

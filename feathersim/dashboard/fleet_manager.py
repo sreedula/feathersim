@@ -41,6 +41,7 @@ from feathersim.sim.world import (
 
 SCHEMATIC_SIZE = 460
 FEED_SIZE = 560  # the cinematic 3D overview feed resolution
+CAM_SIZE = 220   # per-robot onboard camera resolution (composited into a strip)
 
 
 def _hex(rgb: tuple[float, float, float]) -> str:
@@ -68,6 +69,7 @@ class FleetSimManager:
         self._render = render
         self._perc_renderer: mujoco.Renderer | None = None  # built on the sim thread (GL affinity)
         self._feed_renderer: mujoco.Renderer | None = None   # 3D overview feed (also sim-thread)
+        self._cam_renderer: mujoco.Renderer | None = None    # per-robot onboard cameras (sim-thread)
         self._overview_cam = self.world.overview_camera(distance=6.2, elevation=-32.0)
 
         self.ctrl = FleetController(
@@ -79,6 +81,7 @@ class FleetSimManager:
         self._snapshot: dict = self._build_telemetry()
         self._frame: bytes | None = None        # schematic JPEG
         self._frame3d: bytes | None = None       # cinematic 3D overview JPEG
+        self._frame_cams: bytes | None = None    # per-robot onboard-camera strip JPEG
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
 
@@ -123,6 +126,7 @@ class FleetSimManager:
         if self._render:
             self._perc_renderer = mujoco.Renderer(self.world.model, IMAGE_SIZE, IMAGE_SIZE)
             self._feed_renderer = mujoco.Renderer(self.world.model, FEED_SIZE, FEED_SIZE)
+            self._cam_renderer = mujoco.Renderer(self.world.model, CAM_SIZE, CAM_SIZE)
         try:
             while not self._stop.is_set():
                 start = time.perf_counter()
@@ -132,10 +136,10 @@ class FleetSimManager:
                 budget = self.steps_per_publish * TIMESTEP / self.speed
                 time.sleep(max(0.0, budget - (time.perf_counter() - start)))
         finally:
-            for r in (self._perc_renderer, self._feed_renderer):
+            for r in (self._perc_renderer, self._feed_renderer, self._cam_renderer):
                 if r is not None:
                     r.close()
-            self._perc_renderer = self._feed_renderer = None
+            self._perc_renderer = self._feed_renderer = self._cam_renderer = None
 
     # --- controls (HTTP threads) ---------------------------------------------------------
 
@@ -165,16 +169,37 @@ class FleetSimManager:
         with self._lock:
             return self._frame3d
 
+    def frame_cams(self) -> bytes | None:
+        with self._lock:
+            return self._frame_cams
+
     # --- publishing ----------------------------------------------------------------------
 
     def _publish(self) -> None:
         telemetry = self._build_telemetry()
         frame = self._render_schematic()
-        frame3d = self._render_3d() if self._feed_renderer is not None else None
+        frame3d = self._render_3d() if self._feed_renderer is not None else None  # also resets the scene clean
+        frame_cams = self._render_robotcams() if self._cam_renderer is not None else None
         with self._lock:
             self._snapshot, self._frame = telemetry, frame
             if frame3d is not None:
                 self._frame3d = frame3d
+            if frame_cams is not None:
+                self._frame_cams = frame_cams
+
+    def _render_robotcams(self) -> bytes:
+        """Composite each robot's forward onboard camera into a labelled horizontal strip (the scene is
+        already clean here — `_render_3d` ran reset_scene + sync_visuals just before)."""
+        strip = Image.new("RGB", (CAM_SIZE * self.world.n_robots, CAM_SIZE), (12, 14, 18))
+        draw = ImageDraw.Draw(strip)
+        for k in range(self.world.n_robots):
+            self._cam_renderer.update_scene(self.world.data, f"robotcam_{k}")
+            strip.paste(Image.fromarray(self._cam_renderer.render()), (k * CAM_SIZE, 0))
+            draw.rectangle([k * CAM_SIZE, 0, (k + 1) * CAM_SIZE - 1, CAM_SIZE - 1], outline=_hex(_ROBOT_COLORS[k]), width=3)
+            draw.text((k * CAM_SIZE + 8, 6), f"robot {k}", fill=_hex(_ROBOT_COLORS[k]))
+        buf = io.BytesIO()
+        strip.save(buf, format="JPEG", quality=80)
+        return buf.getvalue()
 
     def _render_3d(self) -> bytes:
         # Restore the clean cinematic scene (a perception read may have left it randomized) and paint the

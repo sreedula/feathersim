@@ -94,6 +94,7 @@ def _robot_mjcf(n_robots: int) -> str:
       <geom type="cylinder" pos="0 0 0.12" size="0.13 0.03" material="robotmat_{k}"/>
       <geom name="heading_{k}" type="box" pos="0.16 0 0.12" size="0.06 0.05 0.02"
             rgba="0.97 0.85 0.15 1"/>
+      <camera name="robotcam_{k}" pos="-0.02 0 0.42" xyaxes="0 -1 0 0.34 0 0.94" fovy="74"/>
       <geom type="box" pos="0 0 0.19" size="0.05 0.07 0.05" contype="0" conaffinity="0" material="armmat"/>
       <body name="arm_{k}" pos="0 0 0.23" gravcomp="1">
         <joint name="arm_{k}" type="hinge" axis="0 1 0"/>

@@ -89,6 +89,16 @@ def create_app(manager: FleetSimManager | None = None) -> FastAPI:
             media_type=f"multipart/x-mixed-replace; boundary={_MJPEG_BOUNDARY}",
         )
 
+    @app.get("/api/robotcams")
+    async def robotcams(request: Request) -> StreamingResponse:
+        mgr = _manager(request)
+        if mgr.frame_cams() is None:
+            raise HTTPException(status_code=503, detail="onboard cameras unavailable (rendering disabled)")
+        return StreamingResponse(
+            _mjpeg(mgr, frame_getter=mgr.frame_cams),
+            media_type=f"multipart/x-mixed-replace; boundary={_MJPEG_BOUNDARY}",
+        )
+
     return app
 
 
