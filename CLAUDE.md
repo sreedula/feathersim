@@ -10,7 +10,7 @@ start of every session.**
 
 ## Architecture (one screen)
 
-- `feathersim/sim/` — MuJoCo world: robot base, 2–3 machines (state machine: idle→running→done), parts table. Pure sim.
+- `feathersim/sim/` — MuJoCo world: 1–4 robot bases (each with an arm + gripper + onboard camera), 1–4 machines (state machine: idle→running→done), output table, obstacles; cinematic materials for the live feed. Pure sim.
 - `feathersim/kinematics/` — holonomic drive math (body velocity → wheel commands). **Pure functions, no sim import.**
 - `feathersim/control/` — go-to-pose controller for the base.
 - `feathersim/perception/` — render + auto-label pipeline (labels from sim ground truth), a small PyTorch CNN, training, and `perception.read(camera) -> state`.

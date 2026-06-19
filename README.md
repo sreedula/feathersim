@@ -20,10 +20,10 @@ overlaid — with a hand-coded↔learned controller toggle and a perception-diff
 
 ```bash
 make install     # pip install -r requirements.txt  (Python 3.11+)
-make test        # pytest — 162 tests
+make test        # pytest — 176 tests
 make demo        # headless single-robot autonomy loop (routes around obstacles)
-make fleet       # headless 3-robot fleet, compares scheduling strategies, collision-free
-make dashboard   # the command center at http://localhost:8000  (fleet + paths + toggle + slider)
+make fleet       # headless 4-robot fleet, compares scheduling strategies, collision-free
+make dashboard   # the command center at http://localhost:8000  (3D feed + onboard cams + paths + toggle + slider)
 make teleop      # single-robot dashboard with WASD override
 make train       # retrain perception (clean + domain-randomized models)
 make policy      # behavior-clone the controller into a learned policy
@@ -35,16 +35,16 @@ A walking skeleton built in vertical slices — runnable and demoable at every p
 
 | Layer | Package | What it does |
 |---|---|---|
-| **Sim** | `feathersim/sim/` | Headless MuJoCo world (1–3 robots, 2–3 machines, table, obstacles) + a pure timer FSM `idle→running→done`. Deterministic per seed. |
+| **Sim** | `feathersim/sim/` | MuJoCo world (1–4 robots with **arm + gripper** and an onboard camera, 1–4 machines, table, obstacles) + a pure timer FSM `idle→running→done`. Cinematic materials/shadows for the live feed; deterministic per seed. |
 | **Kinematics** | `feathersim/kinematics/` | Holonomic **mecanum** drive math — pure inverse/forward kinematics, no sim import. |
 | **Control** | `feathersim/control/` | Go-to-pose P-controller; the body twist is routed through the wheel IK→FK each tick. Pluggable `velocity_fn`. |
 | **Skill SDK** | `feathersim/sdk/` | A `Robot` facade hiding joints/MJCF/kinematics: `move_to / pick / place / tend`. Preconditions raise `SkillError`. |
-| **Perception** | `feathersim/perception/` | Renders per-machine crops, **auto-labels** from ground-truth configs, trains a 2-head CNN. With **domain randomization**: robust **84.4%** under DR vs a clean model's **74.4%** (both 1.0 clean; 0.39 baseline). |
+| **Perception** | `feathersim/perception/` | Renders per-machine crops, **auto-labels** from ground-truth configs, trains a 2-head CNN. The deployed model trains on a **clean+randomized mix**: **1.0 clean *and* 0.91 under domain randomization** (+19 pts over a clean-only model's 0.71; 0.37 baseline). |
 | **Planning** | `feathersim/planning/` | Occupancy grid + 8-connected **A\*** + line-of-sight smoothing + a waypoint follower. Routes around obstacles. |
 | **Autonomy** | `feathersim/autonomy/` | The single-robot loop: perceive → tend the longest-waiting perceived-`done` machine → repeat. Selects on **perception, never ground truth**. |
-| **Fleet** | `feathersim/fleet/` | Multi-robot tick engine: task allocation (no double-booking), **symmetric collision avoidance**, pluggable scheduling. |
+| **Fleet** | `feathersim/fleet/` | Multi-robot tick engine (up to 4): task allocation (no double-booking), **symmetric collision avoidance** + a **priority-yield deadlock breaker**, pluggable scheduling. |
 | **Policy** | `feathersim/policy/` | **Behavior-cloned** go-to-pose controller; a tiny MLP drop-in for the P-controller — runs the whole loop at 112% of the expert's throughput. |
-| **Dashboard** | `feathersim/dashboard/` | FastAPI + single-file vanilla JS: the multi-robot **command center** and the single-robot **WASD-teleop** dashboard. |
+| **Dashboard** | `feathersim/dashboard/` | FastAPI + single-file vanilla JS: the multi-robot **command center** (live cinematic 3D feed, per-robot onboard cameras, tactical top-down) and the single-robot **WASD-teleop** dashboard. |
 
 ## v2 — five hard systems on top of the walking skeleton
 
@@ -62,6 +62,24 @@ A walking skeleton built in vertical slices — runnable and demoable at every p
   planned paths overlaid, per-robot perceived-vs-true state, live task assignments, a **hand-coded ↔
   learned** controller toggle, and a **perception-difficulty slider** that dials domain randomization
   up/down live — drag it and watch the clean model's accuracy drop while the robust model holds.
+
+## v3 — make it look and behave like a real Feather sim
+
+Five polish iterations layered on top, each through the full engineering loop (reviewer SHIP on all five):
+
+1. **Cinematic world + live 3D feed.** Glossy materials, gradient skybox, reflective floor, shadows; the
+   command center streams a live 3D overview. Lighting domain randomization is now *relative* to the
+   authored key light (the feed stays correctly lit, with no train/serve gap), and the robust model is
+   **mix-trained** → robust *without* sacrificing clean accuracy.
+2. **Manipulator arms + physical part transport.** Every robot gets an arm + gripper; parts **ride the
+   gripper** from machine to a **growing stack on the output table**.
+3. **Animated reach / grasp / retract.** The arm **swings into the machine to grasp** and **extends over
+   the table to place** — a kinematic, `gravcomp`-decoupled joint that never perturbs the base.
+4. **Onboard cameras.** Each robot's **eye-view** — the machine it's tending, its own gripper, the part —
+   composited into a live strip in the command center.
+5. **A busier 4×4 floor + deadlock-free coordination.** Four robots tending four machines; a
+   **stuck-triggered priority-yield deadlock breaker** keeps the contended floor live where the bare
+   symmetric backstop would freeze — verified collision-free *and* every-part-delivered across 40 seeds.
 
 ## How the loop closes
 
@@ -85,13 +103,13 @@ failure fails loudly.
 Every phase ran the same loop: smallest vertical slice → `test-runner` (nothing advances on red) →
 independent `reviewer` (address CRITICAL/HIGH before commit) → log `DECISIONS`/`LEARNINGS` → commit. The
 reviewer caught bugs a green suite hid — a robot body silently clipping a pillar (planning protects the
-*center*, the follower bows), and a collision guarantee that held only on the lucky seed 0. Both are
-written up in [`LEARNINGS.md`](LEARNINGS.md). **162 tests**; rendering-dependent tests skip without a GL
-backend (`MUJOCO_GL=egl`/`osmesa` to run them in CI).
+*center*, the follower bows), a collision guarantee that held only on the lucky seed 0, and a 4-robot
+deadlock the bare backstop masked. All are written up in [`LEARNINGS.md`](LEARNINGS.md). **176 tests**;
+rendering-dependent tests skip without a GL backend (`MUJOCO_GL=egl`/`osmesa` to run them in CI).
 
 ## Docs
 
-- [`PLAN.md`](PLAN.md) — phased roadmap + acceptance criteria (v1 phases 0–6, v2 phases A–E)
+- [`PLAN.md`](PLAN.md) — phased roadmap + acceptance criteria (v1 phases 0–6, v2 phases A–E, v3 iterations 1–5)
 - [`DECISIONS.md`](DECISIONS.md) — architecture decision log (why)
 - [`LEARNINGS.md`](LEARNINGS.md) — sim/training gotchas, never hit twice
 - [`CLAUDE.md`](CLAUDE.md) — conventions + the engineering loop
