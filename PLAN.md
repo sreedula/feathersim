@@ -326,6 +326,11 @@ randomization up/down live and shows accuracy reacting. All live in the browser.
 
 ## v2 Definition of done
 
-- [ ] `README.md` updated with a multi-robot fleet GIF, the rule-vs-learned toggle, and the difficulty slider
-- [ ] One-command launch; all tests passing
-- [ ] `DECISIONS.md` + `LEARNINGS.md` reflect every v2 choice
+- [x] `README.md` updated with a multi-robot fleet GIF (`scripts/record_fleet_gif.py` → `docs/fleet.gif`), the rule-vs-learned toggle, and the difficulty slider
+- [x] One-command launch (`make dashboard`); all tests passing (162)
+- [x] `DECISIONS.md` + `LEARNINGS.md` reflect every v2 choice
+
+**v2 complete.** Five systems stacked on the v1 walking skeleton: domain-randomized perception (robust
+84.4% vs clean 74.4% under DR) → A* path planning + obstacle avoidance → multi-robot fleet (collision-free
+over 160 seeded runs, scheduling measured) → behavior-cloned policy (112% of expert throughput) →
+command-center dashboard (paths, per-robot perception, controller toggle, live difficulty slider).

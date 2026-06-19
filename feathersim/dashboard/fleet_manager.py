@@ -212,6 +212,13 @@ class FleetSimManager:
         return [x0, y0, x1, y1]
 
     def _render_schematic(self) -> bytes:
+        buf = io.BytesIO()
+        self._schematic_image().save(buf, format="JPEG", quality=85)
+        return buf.getvalue()
+
+    def _schematic_image(self) -> Image.Image:
+        """The top-down cell as a PIL image: table, pillars, machines (true-state colored), planned paths,
+        and robots. Pure drawing — no GL — so it also backs the README fleet GIF."""
         world, ctrl = self.world, self.ctrl
         img = Image.new("RGB", (SCHEMATIC_SIZE, SCHEMATIC_SIZE), (16, 19, 24))
         d = ImageDraw.Draw(img)
@@ -241,6 +248,4 @@ class FleetSimManager:
             d.line([cx, cy, hx, hy], fill=(255, 255, 255), width=2)
             d.text((cx - 3, cy - 6), str(k), fill=(0, 0, 0))
 
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=85)
-        return buf.getvalue()
+        return img
