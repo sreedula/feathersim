@@ -257,13 +257,29 @@ without intersecting obstacles in sim.
 > clearance now ~0.29 m vs 0.2 m radius. Both gotchas logged in LEARNINGS.md. Deferred LOW: static grid
 > built once (Phase C rebuilds per-step for moving robots).
 
-## Phase C — Multi-robot fleet + scheduling  `[ ]`  ← checkpoint (coordination + collision avoidance)
+## Phase C — Multi-robot fleet + scheduling  `[x]`  ← checkpoint (coordination + collision avoidance)
 
 **Acceptance:** 2–3 robots in the MJCF (each its own base, camera, perception read); a fleet manager
 allocates `done` machines so two robots never target the same one; inter-robot collision avoidance
 (cell reservation on the grid, or mutual yielding); ≥2 scheduling strategies (e.g. nearest-done vs
 longest-waiting) with throughput measured for each. N robots tend M machines unattended without
 colliding or double-assigning; throughput logged per strategy.
+
+- [x] Multi-robot `World` (`n_robots`, indexed base methods, `driver(k)`); `Robot(robot_id=)` — v1 default preserved
+- [x] `fleet/scheduling.py` (pure `longest_waiting`/`nearest_done`) + `fleet/manager.py` (lock — no double-assign)
+- [x] `fleet/executor.py`: tick loop, per-robot SM, plan-around-others + symmetric contact backstop, per-robot perception, `FleetReport`
+- [x] `fleet/demo.py` + `make fleet`: 3-robot open-floor fleet, both strategies, collision-free
+- [x] Tests: scheduling/allocation (pure), no-double-assign, collision-free over **8 seeds**, compose-with-obstacles, false-positive recovery, GL e2e
+
+> **Confirmed at checkpoint:** prioritized avoidance + per-robot randomized perception (user: "yea go").
+> Reviewer: SHIP after **two** NEEDS-WORK rounds. R1 (CRITICAL): collision-freedom was seed-tuned — bodies
+> overlapped on ~½ of seeds; the test pinned `seed=0`. Root cause: a never-yielding priority leader
+> rear-ends a yielded follower. Fixed with a **symmetric predictive backstop** (verified collision-free
+> over 160 runs, worst 0.432 m vs 0.40 m) + the test now sweeps 8 seeds + `FleetReport.completed` surfaces
+> timeouts. R2 (MEDIUM/LOW): removed a seed-fragile fairness assertion; refreshed stale priority-scheme
+> docstrings. Findings logged in LEARNINGS.md. Deferred: tight cells (3 robots + pillars, or 2+pillars on
+> ~13% of seeds) can wedge until the time budget — bounded + surfaced; demo uses 3 robots on open floor.
+> Strategies **tie on throughput** (robot-saturated → robot-limited); they'd differ on wait/travel.
 
 ## Phase D — Learned policy (behavior cloning)  `[ ]`  ← checkpoint (BC setup + GPU/CPU)
 

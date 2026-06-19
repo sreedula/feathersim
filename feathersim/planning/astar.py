@@ -81,13 +81,42 @@ def _shortcut(grid: OccupancyGrid, points: list[tuple[float, float]]) -> list[tu
     return out
 
 
+def _nearest_free(grid: OccupancyGrid, cell: Cell, max_radius: int = 6) -> Cell | None:
+    """Nearest free cell to ``cell`` (itself if free), searched in expanding rings; ``None`` if none near.
+
+    Lets planning recover when an endpoint lands in an inflated obstacle — e.g. a robot whose controller
+    bowed its centre a few cm into the inflation band still gets a path back out rather than deadlocking."""
+    if grid.is_free(*cell):
+        return cell
+    r0, c0 = cell
+    for rad in range(1, max_radius + 1):
+        ring = [
+            (r0 + dr, c0 + dc)
+            for dr in range(-rad, rad + 1)
+            for dc in range(-rad, rad + 1)
+            if max(abs(dr), abs(dc)) == rad
+        ]
+        free = [cell for cell in ring if grid.is_free(*cell)]
+        if free:
+            return min(free, key=lambda cell: (cell[0] - r0) ** 2 + (cell[1] - c0) ** 2)
+    return None
+
+
 def plan_path(
     grid: OccupancyGrid,
     start_xy: tuple[float, float],
     goal_xy: tuple[float, float],
 ) -> list[tuple[float, float]] | None:
-    """Plan a smoothed world-space waypoint path from ``start_xy`` to ``goal_xy`` (``None`` if blocked)."""
-    cells = astar(grid, grid.world_to_cell(*start_xy), grid.world_to_cell(*goal_xy))
+    """Plan a smoothed world-space waypoint path from ``start_xy`` to ``goal_xy`` (``None`` if blocked).
+
+    Only the **start** is snapped to the nearest free cell — recovering when a robot has drifted a few cm
+    into the inflation band. The **goal** is never relocated: a requested goal inside an obstacle is
+    genuinely unreachable and returns ``None`` (the exact endpoints are kept on a successful path)."""
+    start = _nearest_free(grid, grid.world_to_cell(*start_xy))
+    goal = grid.world_to_cell(*goal_xy)
+    if start is None or not grid.is_free(*goal):
+        return None
+    cells = astar(grid, start, goal)
     if cells is None:
         return None
     points = [grid.cell_to_world(*c) for c in cells]

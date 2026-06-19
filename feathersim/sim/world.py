@@ -59,6 +59,41 @@ GRID_BOUNDS = (-2.0, -2.0, 2.0, 2.0)      # (xmin, ymin, xmax, ymax) the planner
 _OBSTACLE_POSITIONS = [(0.62, 0.0), (-0.62, 0.0)]
 _OBSTACLE_HALF = 0.22
 
+# Multi-robot fleet (v2 Phase C). robot_0 is blue (matches v1); extras get distinct colors.
+_ROBOT_COLORS = [(0.20, 0.50, 0.90), (0.92, 0.45, 0.15), (0.45, 0.80, 0.30)]
+
+
+def _robot_starts(n_robots: int) -> list[tuple[float, float]]:
+    """Start positions for the bases. One robot starts at the origin (v1); a fleet spreads along x on the
+    table side at y=-0.85 — clear of the pillars at (±0.62, 0) *and* their grid inflation, so every base
+    starts on a free cell (a start inside an inflated obstacle would make its first plan fail)."""
+    if n_robots == 1:
+        return [(0.0, 0.0)]
+    xs = np.linspace(-0.45, 0.45, n_robots)
+    return [(float(x), -0.85) for x in xs]
+
+
+def _robot_mjcf(n_robots: int) -> str:
+    """MJCF for ``n_robots`` holonomic bases, each with its own planar joints, color, and heading marker.
+
+    Every body is homed at the origin so the slide-joint ``qpos`` *is* the world position; start poses
+    are written into ``qpos`` in ``World.__post_init__`` (see :func:`_robot_starts`)."""
+    out = []
+    for k in range(n_robots):
+        r, g, b = _ROBOT_COLORS[k % len(_ROBOT_COLORS)]
+        out.append(
+            f"""
+    <body name="robot_{k}" pos="0 0 0.15">
+      <joint name="base_x_{k}" type="slide" axis="1 0 0"/>
+      <joint name="base_y_{k}" type="slide" axis="0 1 0"/>
+      <joint name="base_yaw_{k}" type="hinge" axis="0 0 1"/>
+      <geom type="cylinder" size="0.2 0.12" rgba="{r} {g} {b} 1"/>
+      <geom name="heading_{k}" type="box" pos="0.16 0 0.12" size="0.06 0.05 0.02"
+            rgba="0.95 0.85 0.20 1"/>
+    </body>"""
+        )
+    return "".join(out)
+
 
 def _machine_positions(n: int) -> list[tuple[float, float]]:
     """Lay ``n`` machines in a row along x at ``MACHINE_Y``, facing the robot at the origin."""
@@ -88,8 +123,8 @@ def _obstacle_mjcf(n_obstacles: int) -> str:
     return "".join(out)
 
 
-def build_mjcf(n_machines: int, n_obstacles: int = 0) -> str:
-    """Return an MJCF string for a world with ``n_machines`` machine bodies and ``n_obstacles`` pillars."""
+def build_mjcf(n_machines: int, n_obstacles: int = 0, n_robots: int = 1) -> str:
+    """Return an MJCF string for a world with ``n_machines`` machines, ``n_obstacles`` pillars, ``n_robots`` bases."""
     light_rgba = _rgba_str(STATE_LIGHT[MachineState.IDLE])  # initial color; mutated per state at runtime
     part_rgba = _rgba_str(_PART_RGBA)
     bodies = []
@@ -115,15 +150,7 @@ def build_mjcf(n_machines: int, n_obstacles: int = 0) -> str:
   <option timestep="{TIMESTEP}" gravity="0 0 -9.81"/>
   <worldbody>
     <light pos="0 0 4" dir="0 0 -1" diffuse="0.9 0.9 0.9"/>
-    <geom name="floor" type="plane" size="5 5 0.1" rgba="0.82 0.82 0.86 1"/>
-    <body name="robot" pos="0 0 0.15">
-      <joint name="base_x" type="slide" axis="1 0 0"/>
-      <joint name="base_y" type="slide" axis="0 1 0"/>
-      <joint name="base_yaw" type="hinge" axis="0 0 1"/>
-      <geom type="cylinder" size="0.2 0.12" rgba="0.20 0.50 0.90 1"/>
-      <geom name="heading" type="box" pos="0.16 0 0.12" size="0.06 0.05 0.02"
-            rgba="0.95 0.85 0.20 1"/>
-    </body>
+    <geom name="floor" type="plane" size="5 5 0.1" rgba="0.82 0.82 0.86 1"/>{_robot_mjcf(n_robots)}
     <body name="table" pos="{TABLE_XY[0]} {TABLE_XY[1]} 0.2">
       <geom type="box" size="0.5 0.3 0.2" rgba="0.60 0.42 0.24 1"/>
     </body>{"".join(bodies)}{_obstacle_mjcf(n_obstacles)}
@@ -142,6 +169,7 @@ class World:
     n_machines: int = 3
     seed: int = 0
     n_obstacles: int = 0
+    n_robots: int = 1
     model: mujoco.MjModel = field(init=False, repr=False)
     data: mujoco.MjData = field(init=False, repr=False)
     machines: list[Machine] = field(init=False)
@@ -152,14 +180,23 @@ class World:
             raise ValueError(f"n_machines must be 1–3, got {self.n_machines}")
         if not 0 <= self.n_obstacles <= len(_OBSTACLE_POSITIONS):
             raise ValueError(f"n_obstacles must be 0–{len(_OBSTACLE_POSITIONS)}, got {self.n_obstacles}")
-        self.model = mujoco.MjModel.from_xml_string(build_mjcf(self.n_machines, self.n_obstacles))
+        if not 1 <= self.n_robots <= len(_ROBOT_COLORS):
+            raise ValueError(f"n_robots must be 1–{len(_ROBOT_COLORS)}, got {self.n_robots}")
+        self.model = mujoco.MjModel.from_xml_string(
+            build_mjcf(self.n_machines, self.n_obstacles, self.n_robots)
+        )
         self.data = mujoco.MjData(self.model)
 
-        # qpos / qvel (dof) addresses for the base joints — looked up by name, no layout assumption.
-        base_joints = ("base_x", "base_y", "base_yaw")
-        jids = [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, j) for j in base_joints]
-        self._pose_adr = [int(self.model.jnt_qposadr[j]) for j in jids]
-        self._dof_adr = [int(self.model.jnt_dofadr[j]) for j in jids]
+        # Per-robot qpos / qvel(dof) addresses for the base joints — looked up by name, no layout assumption.
+        self._pose_adr: list[list[int]] = []
+        self._dof_adr: list[list[int]] = []
+        for k in range(self.n_robots):
+            jids = [
+                mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, f"base_{a}_{k}")
+                for a in ("x", "y", "yaw")
+            ]
+            self._pose_adr.append([int(self.model.jnt_qposadr[j]) for j in jids])
+            self._dof_adr.append([int(self.model.jnt_dofadr[j]) for j in jids])
 
         # geom ids for each machine's status light and bed part (mutated to render visual state).
         self._light_gid = [
@@ -190,6 +227,12 @@ class World:
         self.fixtures = {m.name: pos for m, pos in zip(self.machines, _machine_positions(self.n_machines))}
         self.fixtures["table"] = TABLE_XY
 
+        # Bodies are homed at the origin; write each base's start position into qpos so qpos == world pos.
+        for k, (sx, sy) in enumerate(_robot_starts(self.n_robots)):
+            ax, ay, _ = self._pose_adr[k]
+            self.data.qpos[ax] = sx
+            self.data.qpos[ay] = sy
+
         mujoco.mj_forward(self.model, self.data)
 
     @property
@@ -207,40 +250,49 @@ class World:
         for m in self.machines:
             m.update(self.time)
 
-    def robot_pose(self) -> tuple[float, float, float]:
-        """Return the base pose ``(x, y, yaw)`` from the planar joints."""
-        x, y, yaw = (float(self.data.qpos[a]) for a in self._pose_adr)
+    def robot_pose(self, robot: int = 0) -> tuple[float, float, float]:
+        """Return base ``robot``'s pose ``(x, y, yaw)`` from its planar joints."""
+        x, y, yaw = (float(self.data.qpos[a]) for a in self._pose_adr[robot])
         return (x, y, yaw)
 
-    def set_base_pose(self, x: float, y: float, yaw: float) -> None:
-        """Teleport the base to ``(x, y, yaw)`` and halt it (for resets / test setup)."""
-        ax, ay, ayaw = self._pose_adr
+    def robot_positions(self) -> list[tuple[float, float]]:
+        """Every base's ``(x, y)`` position — used for inter-robot collision avoidance and telemetry."""
+        return [self.robot_pose(k)[:2] for k in range(self.n_robots)]
+
+    def set_base_pose(self, x: float, y: float, yaw: float, *, robot: int = 0) -> None:
+        """Teleport base ``robot`` to ``(x, y, yaw)`` and halt it (for resets / test setup)."""
+        ax, ay, ayaw = self._pose_adr[robot]
         self.data.qpos[ax] = x
         self.data.qpos[ay] = y
         self.data.qpos[ayaw] = yaw
-        self.stop_base()
+        self.stop_base(robot=robot)
         mujoco.mj_forward(self.model, self.data)
 
-    def command_base_velocity(self, vx: float, vy: float, omega: float) -> None:
-        """Command a body-frame twist (x-forward, y-left, omega CCW).
+    def command_base_velocity(self, vx: float, vy: float, omega: float, *, robot: int = 0) -> None:
+        """Command base ``robot`` a body-frame twist (x-forward, y-left, omega CCW).
 
         Converts to world-frame joint velocities using the current yaw and writes them to the base
         DOFs; the next :meth:`step` integrates the motion. Kinematic control — it does not respect
         contacts, so it's for free-space navigation only.
         """
-        _, _, yaw = self.robot_pose()
+        _, _, yaw = self.robot_pose(robot)
         c, s = math.cos(yaw), math.sin(yaw)
         world_vx = c * vx - s * vy
         world_vy = s * vx + c * vy
-        ax, ay, ayaw = self._dof_adr
+        ax, ay, ayaw = self._dof_adr[robot]
         self.data.qvel[ax] = world_vx
         self.data.qvel[ay] = world_vy
         self.data.qvel[ayaw] = omega
 
-    def stop_base(self) -> None:
-        """Zero the base joint velocities (halt)."""
-        for a in self._dof_adr:
+    def stop_base(self, *, robot: int = 0) -> None:
+        """Zero base ``robot``'s joint velocities (halt)."""
+        for a in self._dof_adr[robot]:
             self.data.qvel[a] = 0.0
+
+    def driver(self, robot: int = 0) -> "_RobotDriver":
+        """A single-base :class:`~feathersim.control.go_to_pose.BaseDriver` view bound to ``robot``,
+        so the go-to-pose controller and waypoint follower can drive any one base in a fleet."""
+        return _RobotDriver(self, robot)
 
     def states(self) -> dict[str, MachineState]:
         """Ground-truth machine states keyed by name (the perception labels in Phase 4)."""
@@ -306,12 +358,15 @@ class World:
         """True obstacle footprints (machines, output table, static pillars) — no clearance margin."""
         return self._footprints(0.0)
 
-    def occupancy_grid(self, *, resolution: float = 0.1, inflation: float = ROBOT_RADIUS) -> OccupancyGrid:
+    def occupancy_grid(
+        self, *, resolution: float = 0.1, inflation: float = ROBOT_RADIUS,
+        extra_obstacles: "tuple[Rect, ...] | list[Rect]" = (),
+    ) -> OccupancyGrid:
         """Build an occupancy grid of the floor: machines/table inflated by ``inflation`` (the robot
-        radius), static pillars by ``inflation + OBSTACLE_CLEARANCE`` (extra room for the follower's curve)."""
-        return build_grid(
-            self._footprints(OBSTACLE_CLEARANCE), GRID_BOUNDS, resolution=resolution, inflation=inflation
-        )
+        radius), static pillars by ``inflation + OBSTACLE_CLEARANCE`` (extra room for the follower's
+        curve). ``extra_obstacles`` (e.g. other robots, in Phase C) are added as dynamic footprints."""
+        rects = self._footprints(OBSTACLE_CLEARANCE) + list(extra_obstacles)
+        return build_grid(rects, GRID_BOUNDS, resolution=resolution, inflation=inflation)
 
     def machine_camera(self, i: int, *, azimuth: float = 90.0, elevation: float = -12.0,
                        distance: float = 1.6) -> mujoco.MjvCamera:
@@ -343,3 +398,27 @@ class World:
                        camera: "mujoco.MjvCamera | None" = None) -> np.ndarray:
         """Render machine ``i``'s close-up as an ``(H, W, 3)`` uint8 RGB frame."""
         return self.render(renderer, camera if camera is not None else self.machine_camera(i))
+
+
+@dataclass
+class _RobotDriver:
+    """A single-base ``BaseDriver`` view of one robot in a (possibly multi-robot) :class:`World`.
+
+    Lets :func:`drive_to_pose` / :func:`follow_path` (which assume one base) drive base ``robot`` by
+    delegating the four driver methods to the indexed :class:`World` API. ``step`` advances the whole
+    world (all bases move on the shared ``mj_step``)."""
+
+    world: World
+    robot: int = 0
+
+    def robot_pose(self) -> tuple[float, float, float]:
+        return self.world.robot_pose(self.robot)
+
+    def command_base_velocity(self, vx: float, vy: float, omega: float) -> None:
+        self.world.command_base_velocity(vx, vy, omega, robot=self.robot)
+
+    def stop_base(self) -> None:
+        self.world.stop_base(robot=self.robot)
+
+    def step(self) -> None:
+        self.world.step()

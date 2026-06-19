@@ -1,4 +1,4 @@
-.PHONY: install test demo dashboard train clean
+.PHONY: install test demo fleet dashboard train clean
 
 install:
 	python3 -m pip install -r requirements.txt
@@ -8,6 +8,9 @@ test:
 
 demo:
 	python3 -m feathersim.demo
+
+fleet:
+	python3 -m feathersim.fleet.demo
 
 # No --reload: the sim is a stateful in-process thread; a reload would reset the running demo.
 dashboard:

@@ -52,12 +52,15 @@ class Robot:
         self,
         world: World,
         *,
+        robot_id: int = 0,
         gains: PoseGains = PoseGains(),
         tolerance: PoseTolerance = PoseTolerance(),
         geom: MecanumGeometry = MecanumGeometry(),
         plan: bool = False,
     ) -> None:
         self.world = world
+        self.robot_id = robot_id              # which base in the world this facade drives
+        self._driver = world.driver(robot_id)
         self.gains = gains
         self.tolerance = tolerance
         self.geom = geom
@@ -65,7 +68,7 @@ class Robot:
         self.delivered: list[str] = []        # parts placed on the table, in order
         # With plan=True, move_to routes around the world's obstacles via A* instead of driving straight.
         # The grid is built ONCE here from the world's static obstacles; it does not track moving bodies
-        # (Phase C will rebuild per-step once there are other robots to avoid).
+        # (the Phase-C fleet adds other robots as dynamic obstacles itself, replanning per tick).
         self._grid = world.occupancy_grid() if plan else None
 
     # --- introspection -------------------------------------------------------------------
@@ -73,7 +76,7 @@ class Robot:
     @property
     def pose(self) -> Pose:
         """Current base pose ``(x, y, yaw)``."""
-        return self.world.robot_pose()
+        return self.world.robot_pose(self.robot_id)
 
     def machine_state(self, machine: str) -> MachineState:
         """Ground-truth state of ``machine`` (for scripting/inspection; the autonomy loop will use
@@ -103,11 +106,11 @@ class Robot:
         obstacles; otherwise it drives straight (v1 behavior)."""
         goal = target if _is_pose(target) else self.tending_pose(target)  # type: ignore[arg-type]
         if self._grid is not None:
-            waypoints = plan_path(self._grid, self.world.robot_pose()[:2], (goal[0], goal[1]))
+            waypoints = plan_path(self._grid, self.pose[:2], (goal[0], goal[1]))
             if waypoints is None:
                 raise SkillError(f"no path to {target!r}")
             result = follow_path(
-                self.world, waypoints, goal[2], gains=self.gains, geom=self.geom,
+                self._driver, waypoints, goal[2], gains=self.gains, geom=self.geom,
                 final_tolerance=self.tolerance,
             )
             if not result.reached:
@@ -117,7 +120,7 @@ class Robot:
                 )
         else:
             result = drive_to_pose(
-                self.world, goal, gains=self.gains, tolerance=self.tolerance, geom=self.geom
+                self._driver, goal, gains=self.gains, tolerance=self.tolerance, geom=self.geom
             )
             if not result.reached:
                 raise SkillError(f"could not reach {target!r}: {result.position_error:.3f}m off")
@@ -187,7 +190,7 @@ class Robot:
             raise SkillError(f"unknown fixture {fixture!r}") from None
 
     def _at(self, pose: Pose) -> bool:
-        distance, heading = pose_error(self.world.robot_pose(), pose)
+        distance, heading = pose_error(self.pose, pose)
         return distance <= _AT_POSITION and heading <= _AT_HEADING
 
 

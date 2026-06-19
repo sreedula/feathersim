@@ -190,6 +190,32 @@ binds clearance regardless of inflation). Worst-case body clearance over every d
 vs the 0.2 m radius, enforced by a test parametrized over all legs. The grid is static (built once); Phase
 C will rebuild it per-step for moving robots.
 
+## 2026-06-18 — v2 Phase C: tick-based multi-robot fleet, planning + a symmetric contact backstop
+**Decision:** The fleet runs N robots on a **single tick loop** (the blocking `run_autonomy` can't drive
+robots sharing one `mj_step`): each tick every robot advances its own SM (`select→to_machine→pick→
+to_table→place`) and the world steps once. `World` is now multi-robot (`n_robots`, indexed base methods,
+bodies homed at the origin with start poses written into `qpos` so `qpos`==world pos, `driver(k)` →
+`_RobotDriver`); `Robot(robot_id=...)` drives its base; `robot_id=0` default keeps v1/v2A/v2B intact.
+**Task allocation** (`FleetManager`) locks each machine to one robot — never double-booked (the tick loop
+is sequential, so a lock commits before the next robot runs); released at *pick* (the part is unloaded,
+the machine free to re-tend). **Scheduling** is pluggable (`longest_waiting`, `nearest_done`).
+**Collision avoidance** is two layers: every robot **plans around all others** (inflated obstacles,
+periodic replan via the Phase-B grid with `extra_obstacles`), plus a **symmetric predictive backstop** —
+a robot stops if its predicted next step would land within a body-clearance of *any* other robot.
+**Per-robot perception**: each robot reads the machine cameras through its own `corrupt_image` RNG
+(Phase-A synergy), so reads can genuinely disagree.
+**Why:** A tick loop is the only thing that composes for a shared world. Planning-around-others keeps
+robots apart proactively; the symmetric backstop is the *guarantee* — verified collision-free
+(min separation ≥ 2·radius) over 160 independent runs (40 seeds × 2 configs × 2 strategies), worst
+0.432 m vs the 0.40 m body clearance. It's symmetric (not priority-only) because a never-yielding leader
+*rear-ends* a yielded follower — the bug that made an earlier priority scheme collide on ~half of seeds.
+**Tradeoff:** Dropping strict priority loses the structural no-deadlock guarantee, so two robots in a
+*tight* cell (3 robots + static pillars, or 2 robots + pillars on ~13% of seeds) can wedge until
+`max_sim_seconds` — bounded and surfaced as `FleetReport.completed == False`; the demo therefore uses
+3 robots on an **open floor** (robot↔robot coordination, collision-free on every seed tested). Throughput
+is logged per strategy but the two **tie** under load: when robots are saturated, total throughput is
+robot-limited regardless of which done machine is chosen — the strategies differ in wait/travel, not rate.
+
 ## 2026-06-18 — Three project subagents for the engineering loop
 **Decision:** Add `test-runner` (haiku), `reviewer` (sonnet), `docs-researcher` (sonnet) in
 `.claude/agents/`. The per-phase loop delegates testing and end-of-phase review to them.

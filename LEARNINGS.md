@@ -123,6 +123,34 @@ every tending pose, made clearance governed by inflation (tunable) instead of by
 Also: pillars too close together (±0.5) pinch the narrow central corridor shut at grid resolution,
 trapping the start and making machine_1 unreachable. Placement is a real constraint, not cosmetic — sweep it.
 
+## 2026-06-18 — Slide-joint qpos is relative to the body's home, not world (multi-robot, v2 Phase C)
+Making the world multi-robot, I first placed each robot body at its start position in the MJCF
+(`<body pos="sx sy 0.15">`) with planar slide joints. `robot_pose` reads `qpos` — which is the joint
+*displacement from the body home* — so every robot reported (0,0) regardless of where it actually was
+(in v1 the single body was at the origin, so qpos==world by luck). Two robots overlapped at distance 0.
+Fix: home *all* robot bodies at the origin and write start positions into `qpos` in `__post_init__`, so
+`qpos` is the true world position everywhere. Lesson: with free/slide joints, qpos is frame-relative —
+don't conflate it with world coordinates unless the body frame is the world frame.
+
+## 2026-06-18 — A green multi-robot test certified a collision-freedom that held only on seed 0 (v2 Phase C)
+The collision-avoidance test parametrized over robot/obstacle *counts* but pinned `seed=0`. It passed —
+but a seed sweep (review) showed bodies overlapped on ~half of all seeds; `seed=0` just landed in the
+safe basin. Same trap as Phase B (sampling one favorable case). Two compounding lessons: (1) for a
+*stochastic* safety property, parametrize the test over many seeds, not one — a single-seed safety test
+is theatre. (2) The avoidance bug itself: a strict-priority scheme where the top robot never yields lets
+it **rear-end** a lower robot that yielded into its (stale) path. Strict priority prevents *deadlock* but
+not *collision* — collision avoidance must be **symmetric** at the contact layer even if task priority is
+asymmetric. Fix: a symmetric predictive backstop (stop if the next step lands within a body-clearance of
+*any* other robot), verified over 160 runs. It costs the structural no-deadlock guarantee (now bounded by
+a time budget + surfaced via `completed`), an acceptable trade for an actual safety guarantee.
+
+## 2026-06-18 — Under saturation, scheduling strategy barely moves *throughput* (v2 Phase C)
+Expected `longest_waiting` vs `nearest_done` to show a throughput gap; they tied (≤1% apart). Reason:
+when robots are kept busy (a backlog of done machines), total throughput is **robot-limited** — the robot
+is always tending *something*, so which machine it picks doesn't change the rate, only the average wait
+and travel. Throughput is the wrong discriminator for a scheduler under load; latency/fairness is where
+the strategies differ. Worth measuring, but don't expect the headline metric to separate them.
+
 ## 2026-06-18 — Subagents load at session start
 Files added to `.claude/agents/` are NOT available mid-session — they're read when the session
 starts. After creating/editing them, restart Claude Code (or add via `/agents`) before trying to

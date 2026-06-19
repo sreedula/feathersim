@@ -76,6 +76,12 @@ def test_seed_changes_timings():
 
 def test_mjcf_has_expected_bodies():
     xml = build_mjcf(2)
-    assert 'name="robot"' in xml
+    assert 'name="robot_0"' in xml
     assert 'name="table"' in xml
     assert xml.count("<body name=\"machine_") == 2
+
+
+def test_mjcf_builds_a_fleet():
+    xml = build_mjcf(3, 0, 3)
+    assert all(f'name="robot_{k}"' in xml for k in range(3))
+    assert all(f'base_x_{k}' in xml for k in range(3))
