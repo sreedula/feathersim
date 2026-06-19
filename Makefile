@@ -1,4 +1,4 @@
-.PHONY: install test demo fleet dashboard train policy clean
+.PHONY: install test demo fleet dashboard teleop train policy clean
 
 install:
 	python3 -m pip install -r requirements.txt
@@ -13,7 +13,11 @@ fleet:
 	python3 -m feathersim.fleet.demo
 
 # No --reload: the sim is a stateful in-process thread; a reload would reset the running demo.
+# `dashboard` = the v2 multi-robot command center; `teleop` = the single-robot WASD-override dashboard.
 dashboard:
+	python3 -m uvicorn feathersim.dashboard.fleet_server:app --port 8000
+
+teleop:
 	python3 -m uvicorn feathersim.dashboard.server:app --port 8000
 
 train:

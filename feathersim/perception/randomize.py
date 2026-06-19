@@ -85,6 +85,25 @@ class DomainRandomizer:
     blur_prob: float = 0.55
     blur_length: tuple[int, int] = (3, 9)             # kernel length in px (inclusive)
 
+    @classmethod
+    def at_difficulty(cls, difficulty: float) -> "DomainRandomizer":
+        """A randomizer scaled by ``difficulty`` ∈ [0, 1] — 0 is clean (no corruption), 1 is full DR.
+
+        Lets the dashboard dial perception difficulty live: every probability and the dominant magnitudes
+        (light jitter/tint, noise σ) scale with ``difficulty``, and the light interpolates from the clean
+        default (0.9) toward the full range. Occluder/blur *extents* keep their defaults — presence, dialed
+        by probability, is the dominant lever — so a low-difficulty scene rarely shows one at all.
+        """
+        d = max(0.0, min(1.0, difficulty))
+        return cls(
+            light_xy_jitter=1.6 * d,
+            light_intensity=(0.9 - 0.45 * d, 0.9 + 0.15 * d),
+            light_tint=0.22 * d,
+            occluder_prob=0.5 * d,
+            noise_sigma=(0.0, 26.0 * d),
+            blur_prob=0.55 * d,
+        )
+
     def sample_scene(self, rng: np.random.Generator, n_machines: int) -> SceneRandomization:
         """Sample a randomized scene (light + one occluder slot per machine)."""
         x, y = rng.uniform(-self.light_xy_jitter, self.light_xy_jitter, size=2)

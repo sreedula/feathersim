@@ -134,6 +134,133 @@ def _would_collide(world: World, k: int, target_xy: tuple[float, float]) -> bool
     )
 
 
+class FleetController:
+    """The fleet tick engine: one ``step()`` advances every robot's state machine and the world once.
+
+    Holds all per-robot state (phase, assigned machine, planned path, last perception) so both the
+    blocking :func:`run_fleet` and the dashboard can drive it and read its live state. ``velocity_fn`` is
+    swappable at runtime — the rule-vs-learned controller toggle.
+    """
+
+    def __init__(
+        self, world: World, perceive_fn: PerceiveFn, *, strategy: Strategy, strategy_name: str = "",
+        robots: list[Robot] | None = None, gains: PoseGains = PoseGains(),
+        geom: MecanumGeometry = MecanumGeometry(), select_interval: float = 0.3,
+        velocity_fn=velocity_command,
+        on_event: Callable[[int, str, str, float], None] | None = None,
+    ) -> None:
+        self.world, self.perceive_fn = world, perceive_fn
+        self.strategy_name, self.gains, self.geom = strategy_name, gains, geom
+        self.select_interval, self.velocity_fn, self.on_event = select_interval, velocity_fn, on_event
+        n = world.n_robots
+        self.robots = robots or [Robot(world, robot_id=k, gains=gains, geom=geom) for k in range(n)]
+        self.manager = FleetManager({m.name: world.fixtures[m.name] for m in world.machines}, strategy)
+        self.phase = ["select"] * n
+        self.target: list[str | None] = [None] * n
+        self.goal: list[tuple[float, float, float] | None] = [None] * n
+        self.path: list[list[tuple[float, float]] | None] = [None] * n
+        self.wp = [1] * n
+        self.replan_at = [0.0] * n
+        self.next_select = [0.0] * n
+        self.last_readings: list[dict | None] = [None] * n  # per-robot last perception (for the dashboard)
+        self.per_robot = {k: 0 for k in range(n)}
+        self.per_machine = {m.name: 0 for m in world.machines}
+        self.events: list[tuple] = []
+        self.min_sep = math.inf
+
+    @property
+    def delivered(self) -> int:
+        return sum(self.per_robot.values())
+
+    def _start_leg(self, k: int, goal_pose: tuple[float, float, float]) -> None:
+        self.goal[k], self.path[k], self.wp[k], self.replan_at[k] = goal_pose, None, 1, 0.0
+
+    def _drive(self, k: int) -> None:
+        """One stored-path follower tick: (re)plan when stale, advance waypoints, stop on the contact
+        backstop if the next step would touch another robot. Drives via the (swappable) ``velocity_fn``."""
+        world = self.world
+        pose = world.robot_pose(k)
+        if self.path[k] is None or world.time >= self.replan_at[k]:
+            fresh = _plan_leg(world, k, self.goal[k][:2])
+            if fresh is not None:
+                self.path[k], self.wp[k] = fresh, 1
+            self.replan_at[k] = world.time + _REPLAN_INTERVAL
+        if self.path[k] is None:
+            world.stop_base(robot=k)
+            return
+        pth = self.path[k]
+        while self.wp[k] < len(pth) - 1 and math.dist(pose[:2], pth[self.wp[k]]) <= _WAYPOINT_TOL:
+            self.wp[k] += 1
+        if self.wp[k] >= len(pth) - 1:
+            tgt = self.goal[k]
+        else:
+            wx, wy = pth[self.wp[k]]
+            tgt = (wx, wy, math.atan2(wy - pose[1], wx - pose[0]))
+        if _would_collide(world, k, tgt[:2]):
+            world.stop_base(robot=k)
+            return
+        vx, vy, omega = self.velocity_fn(pose, tgt, self.gains)
+        rvx, rvy, romega = wheels_to_body(body_to_wheels(vx, vy, omega, self.geom), self.geom)
+        world.command_base_velocity(rvx, rvy, romega, robot=k)
+
+    def _advance(self, k: int) -> None:
+        world, robot = self.world, self.robots[k]
+        ph, pose = self.phase[k], world.robot_pose(k)
+        if ph == "select":
+            world.stop_base(robot=k)
+            if world.time < self.next_select[k]:
+                return
+            self.next_select[k] = world.time + self.select_interval
+            readings = self.perceive_fn(k)
+            self.last_readings[k] = readings
+            done = [name for name, s in readings.items() if s.machine_state is MachineState.DONE]
+            self.manager.observe(done, world.time)
+            machine = self.manager.assign(k, pose[:2], done)
+            if machine is not None:
+                self.target[k], self.phase[k] = machine, "to_machine"
+                self._start_leg(k, robot.tending_pose(machine))
+        elif ph in ("to_machine", "to_table"):
+            dist, head = pose_error(pose, self.goal[k])
+            if dist <= _ARRIVE_POS and head <= _ARRIVE_HEADING:
+                world.stop_base(robot=k)
+                self.phase[k] = "pick" if ph == "to_machine" else "place"
+            else:
+                self._drive(k)
+        elif ph == "pick":
+            try:
+                robot.pick(self.target[k])
+            except PreconditionError:
+                self.manager.release(self.target[k])
+                self.phase[k] = "select"
+                return
+            self.manager.release(self.target[k])
+            self.phase[k] = "to_table"
+            self._start_leg(k, _table_slot(world, k))
+        elif ph == "place":
+            part = robot.place(self.goal[k])
+            self.per_robot[k] += 1
+            self.per_machine[self.target[k]] += 1
+            self.events.append((k, self.target[k], part, round(world.time, 2)))
+            if self.on_event is not None:
+                self.on_event(k, self.target[k], part, world.time)
+            self.phase[k] = "select"
+
+    def step(self) -> None:
+        """Advance every robot one tick, step the world once, and update the closest-approach metric."""
+        for k in range(self.world.n_robots):
+            self._advance(k)
+        self.world.step()
+        self.min_sep = min(self.min_sep, _min_separation(self.world))
+
+    def report(self, target_parts: int) -> FleetReport:
+        return FleetReport(
+            strategy=self.strategy_name, parts_delivered=self.delivered,
+            completed=self.delivered >= target_parts, sim_seconds=self.world.time,
+            per_robot=dict(self.per_robot), per_machine=dict(self.per_machine),
+            min_robot_separation=self.min_sep, events=list(self.events),
+        )
+
+
 def run_fleet(
     world: World,
     perceive_fn: PerceiveFn,
@@ -149,106 +276,10 @@ def run_fleet(
     on_event: Callable[[int, str, str, float], None] | None = None,
 ) -> FleetReport:
     """Run the fleet unattended until ``target_parts`` are delivered (or the sim-time budget elapses)."""
-    n = world.n_robots
-    robots = robots or [Robot(world, robot_id=k, gains=gains, geom=geom) for k in range(n)]
-    manager = FleetManager({m.name: world.fixtures[m.name] for m in world.machines}, strategy)
-
-    phase = ["select"] * n
-    target: list[str | None] = [None] * n
-    goal: list[tuple[float, float, float] | None] = [None] * n
-    path: list[list[tuple[float, float]] | None] = [None] * n
-    wp = [1] * n
-    replan_at = [0.0] * n
-    next_select = [0.0] * n
-    per_robot = {k: 0 for k in range(n)}
-    per_machine = {m.name: 0 for m in world.machines}
-    events: list[tuple] = []
-    min_sep = math.inf
-
-    def start_leg(k: int, goal_pose: tuple[float, float, float]) -> None:
-        goal[k], path[k], wp[k], replan_at[k] = goal_pose, None, 1, 0.0  # plan lazily on first drive tick
-
-    def drive(k: int) -> None:
-        """One stored-path follower tick: (re)plan when stale, advance waypoints, stop on the symmetric
-        contact backstop if the next step would touch another robot."""
-        pose = world.robot_pose(k)
-        if path[k] is None or world.time >= replan_at[k]:
-            fresh = _plan_leg(world, k, goal[k][:2])
-            if fresh is not None:
-                path[k], wp[k] = fresh, 1
-            replan_at[k] = world.time + _REPLAN_INTERVAL
-        if path[k] is None:
-            world.stop_base(robot=k)  # no route yet — hold
-            return
-        pth = path[k]
-        while wp[k] < len(pth) - 1 and math.dist(pose[:2], pth[wp[k]]) <= _WAYPOINT_TOL:
-            wp[k] += 1
-        if wp[k] >= len(pth) - 1:
-            tgt = goal[k]  # final leg — settle on the full goal pose (correct heading for pick/place)
-        else:
-            wx, wy = pth[wp[k]]
-            tgt = (wx, wy, math.atan2(wy - pose[1], wx - pose[0]))
-        if _would_collide(world, k, tgt[:2]):
-            world.stop_base(robot=k)  # contact backstop — predicted step would touch another robot
-            return
-        vx, vy, omega = velocity_command(pose, tgt, gains)
-        rvx, rvy, romega = wheels_to_body(body_to_wheels(vx, vy, omega, geom), geom)
-        world.command_base_velocity(rvx, rvy, romega, robot=k)
-
-    def advance(k: int) -> None:
-        ph, robot, pose = phase[k], robots[k], world.robot_pose(k)
-        if ph == "select":
-            world.stop_base(robot=k)
-            if world.time < next_select[k]:
-                return
-            next_select[k] = world.time + select_interval
-            readings = perceive_fn(k)
-            done = [name for name, s in readings.items() if s.machine_state is MachineState.DONE]
-            manager.observe(done, world.time)
-            machine = manager.assign(k, pose[:2], done)
-            if machine is not None:
-                target[k], phase[k] = machine, "to_machine"
-                start_leg(k, robot.tending_pose(machine))
-        elif ph in ("to_machine", "to_table"):
-            dist, head = pose_error(pose, goal[k])
-            if dist <= _ARRIVE_POS and head <= _ARRIVE_HEADING:
-                world.stop_base(robot=k)
-                phase[k] = "pick" if ph == "to_machine" else "place"
-            else:
-                drive(k)
-        elif ph == "pick":
-            try:
-                robot.pick(target[k])
-            except PreconditionError:
-                manager.release(target[k])  # perception false positive — give the machine back
-                phase[k] = "select"
-                return
-            manager.release(target[k])  # part is unloaded; machine is free to be re-tended by anyone
-            phase[k] = "to_table"
-            start_leg(k, _table_slot(world, k))
-        elif ph == "place":
-            part = robot.place(goal[k])  # deposit at this robot's staggered table slot
-            per_robot[k] += 1
-            per_machine[target[k]] += 1
-            events.append((k, target[k], part, round(world.time, 2)))
-            if on_event is not None:
-                on_event(k, target[k], part, world.time)
-            phase[k] = "select"
-
-    while sum(per_robot.values()) < target_parts and world.time < max_sim_seconds:
-        for k in range(n):
-            advance(k)
-        world.step()
-        min_sep = min(min_sep, _min_separation(world))
-
-    delivered = sum(per_robot.values())
-    return FleetReport(
-        strategy=strategy_name,
-        parts_delivered=delivered,
-        completed=delivered >= target_parts,
-        sim_seconds=world.time,
-        per_robot=per_robot,
-        per_machine=per_machine,
-        min_robot_separation=min_sep,
-        events=events,
+    ctrl = FleetController(
+        world, perceive_fn, strategy=strategy, strategy_name=strategy_name, robots=robots,
+        gains=gains, geom=geom, select_interval=select_interval, on_event=on_event,
     )
+    while ctrl.delivered < target_parts and world.time < max_sim_seconds:
+        ctrl.step()
+    return ctrl.report(target_parts)

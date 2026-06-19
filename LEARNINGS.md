@@ -170,6 +170,16 @@ rather than tight per-point equality. If exact saturation mattered, widen `ACTIO
 caps so true ±max sits at ±0.95 (reachable). Lesson: don't put a bounded-asymptote head's target *on* its
 asymptote.
 
+## 2026-06-19 — The difficulty slider didn't bite until I applied the *scene* stage, not just the sensor (v2 Phase E)
+The live difficulty slider initially moved nothing — both models read ~100% at full difficulty. The bug:
+the dashboard's `_perceive` applied only `randomizer.corrupt_image` (the **sensor** stage: noise + blur),
+not the **scene** stage (`apply_scene`: randomized lighting + the status-light **occluder**). But the
+occluder — which physically blocks the cue the model reads — is the *dominant* difficulty lever; noise/blur
+alone barely dent a big bright status light. Applying the full pipeline (sample_scene → apply_scene →
+render → corrupt_image) made accuracy react sharply (clean 1.0→0.79). Lesson: when a DR "intensity" knob
+doesn't move your metric, check you're applying the part of the pipeline that carries the signal — here the
+hard corruption was 3D-scene-side, not pixel-side, and I'd wired up only the cheap half.
+
 ## 2026-06-18 — Subagents load at session start
 Files added to `.claude/agents/` are NOT available mid-session — they're read when the session
 starts. After creating/editing them, restart Claude Code (or add via `/agents`) before trying to

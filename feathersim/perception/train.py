@@ -98,6 +98,19 @@ def load_or_train_model() -> PerceptionCNN:
     return model.eval()
 
 
+def load_or_train_clean_model() -> PerceptionCNN:
+    """Return the **clean-trained** comparison model: load ``model_clean.pt`` if present, else train one
+    on clean (DR-off) data. Used by the dashboard to show the clean baseline degrading next to the robust
+    model as the difficulty slider rises."""
+    model = PerceptionCNN()
+    if MODEL_CLEAN_PATH.exists():
+        model.load_state_dict(torch.load(MODEL_CLEAN_PATH, map_location="cpu"))
+        return model.eval()
+    train_ds, val_ds = train_val_split(generate_dataset(n_samples=480, seed=0), seed=0)
+    model, _ = train(train_ds, val_ds, seed=0)
+    return model.eval()
+
+
 def _state_acc(model: PerceptionCNN, ds: Dataset) -> float:
     return evaluate(model, ds)["state_accuracy"]
 

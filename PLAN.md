@@ -303,12 +303,26 @@ approaches the expert's throughput; comparison logged. Flag if CPU-only training
 > saturated target (LEARNINGS). Deferred: the BC is a *soft* task (memoryless control law) — the headline
 > is the pipeline + closed-loop deploy, not difficulty; obstacle-aware policy offered + deferred.
 
-## Phase E — Command-center dashboard  `[ ]`  ← checkpoint (final demo review)
+## Phase E — Command-center dashboard  `[x]`  ← checkpoint (final demo review)
 
 **Acceptance:** dashboard shows all robots at once, each robot's planned path overlaid, per-robot
 perceived-vs-true machine states, current task assignments, and live scheduling decisions; a toggle
 between hand-coded controller and learned policy; a perception-difficulty slider that dials domain
 randomization up/down live and shows accuracy reacting. All live in the browser.
+
+- [x] Extracted `FleetController` (shared by `run_fleet` + dashboard); behavior-preserving (Phase-C tests pass)
+- [x] `dashboard/fleet_manager.py`: threaded fleet, per-robot DR perception, top-down schematic w/ planned paths, telemetry
+- [x] `dashboard/fleet_server.py` + `static/fleet.html`: command center (telemetry, schematic MJPEG, controller toggle, difficulty slider)
+- [x] `DomainRandomizer.at_difficulty` + `load_or_train_clean_model` (robust vs clean accuracy, live)
+- [x] `make dashboard` → command center; `make teleop` → Phase-6 dashboard
+- [x] Tests: controls, telemetry shape, schematic JPEG, slider robust>clean divergence, routes
+
+> Reviewer: SHIP (no CRITICAL/HIGH). Threading verified (HTTP reads published snapshots under lock;
+> control writes atomic/lock-free); `FleetController` refactor behavior-preserving; slider divergence real
+> (clean 1.0→0.79, robust holds 0.91–1.0). Fixed in-build: the slider only bit once `_perceive` applied the
+> *scene* stage (occluders), not just sensor noise (LEARNINGS). Deferred LOWs: scale occluder/blur extents
+> with difficulty; `policy.py` twist annotated `-> Pose` (alias reuse). **The final-demo review checkpoint
+> is the message to the user below.**
 
 ## v2 Definition of done
 

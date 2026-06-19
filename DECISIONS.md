@@ -241,6 +241,28 @@ a benign under-shoot that makes the policy marginally faster; noted in LEARNINGS
 navigation policy (richer obs, learns avoidance end-to-end) was offered as a heavier alternative and
 deferred.
 
+## 2026-06-19 — v2 Phase E: command center on a shared `FleetController`, with a 2D schematic + live controls
+**Decision:** The capstone dashboard reuses the Phase-C fleet by **extracting a `FleetController`** (one
+`step()` = advance all robots + world once, exposing live `phase`/`target`/`path`/`last_readings`/
+`assignments`); `run_fleet` becomes a thin loop over it. A `FleetSimManager` runs the controller on one
+background thread (all stepping/rendering there; HTTP reads a published snapshot + JPEG under a lock —
+the Phase-6 model) and publishes a **top-down PIL schematic** (no GL) with each robot's planned path
+overlaid, plus telemetry (per-robot phase/target, per-machine true *and* perceived state, assignments).
+Two live controls: a **controller toggle** that swaps `FleetController.velocity_fn` (hand-coded ↔ learned
+policy), and a **perception-difficulty slider** that scales DR via `DomainRandomizer.at_difficulty(d)` and
+shows **both** the deployed robust model and a clean baseline degrading — the robust holds, the clean
+crumbles (clean 1.0→0.79, robust 0.91–1.0 across the slider). `make dashboard` = command center;
+`make teleop` = the Phase-6 single-robot dashboard.
+**Why:** Extracting `FleetController` avoids duplicating the fleet SM (the alternative the Phase-6 dash
+took, which the reviewer would flag), and makes the same tested engine drive both the headless runner and
+the live dashboard. A 2D schematic (vs a 3D render) is the right command-center view — it shows paths,
+assignments, and every robot at once clearly, and needs no GL. Showing robust *vs* clean accuracy live
+turns Phase A's static result into the demo's most compelling interactive moment.
+**Tradeoff:** The schematic is a top-down abstraction, not the photoreal 3D feed (fine — clarity > realism
+for a fleet view). The cross-thread control writes (`velocity_fn`, `difficulty`) are single atomic ops,
+intentionally lock-free under the GIL (documented). The slider's `at_difficulty` scales probabilities +
+dominant magnitudes but keeps occluder/blur extents fixed (presence is the dominant lever).
+
 ## 2026-06-18 — Three project subagents for the engineering loop
 **Decision:** Add `test-runner` (haiku), `reviewer` (sonnet), `docs-researcher` (sonnet) in
 `.claude/agents/`. The per-phase loop delegates testing and end-of-phase review to them.
