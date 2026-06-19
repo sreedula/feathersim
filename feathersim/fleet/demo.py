@@ -20,8 +20,8 @@ from feathersim.perception.randomize import DomainRandomizer
 from feathersim.perception.train import load_or_train_model
 from feathersim.sim.world import ROBOT_RADIUS, World
 
-N_ROBOTS = 3
-N_MACHINES = 3
+N_ROBOTS = 4
+N_MACHINES = 4
 TARGET_PARTS = 9
 
 

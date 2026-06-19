@@ -78,12 +78,24 @@ def test_fleet_collision_free_across_seeds(seed):
     # deliberately not asserted here — this test certifies the safety invariant (no collision), not balance.
 
 
-def test_fleet_composes_with_static_obstacles():
-    """The fleet also avoids the Phase-B static pillars while avoiding each other (2 robots).
+@pytest.mark.parametrize("seed", range(8))
+def test_fleet_scales_to_four_robots(seed):
+    """The headline scaled floor: 4 robots tending 4 machines unattended. This is the config that wedged
+    the bare symmetric backstop (all robots freezing in a cluster); the priority-yield deadlock breaker
+    must keep it both collision-free *and* live (every part delivered) across seeds."""
+    world = World(n_machines=4, seed=seed, n_obstacles=0, n_robots=4)
+    report = run_fleet(
+        world, _ground_truth_perceive(world), strategy=longest_waiting, strategy_name="longest_waiting",
+        target_parts=8, max_sim_seconds=150,   # typical seed ~35 s; tight enough to trip on a wedge regression
+    )
+    assert report.completed and report.parts_delivered == 8
+    assert not report.collided and report.min_robot_separation >= 2 * ROBOT_RADIUS
 
-    Pinned to seed 0: collision-freedom holds for all seeds, but in this tighter cell the symmetric
-    backstop can occasionally wedge two robots until the time budget (a known, surfaced limitation —
-    `completed=False`), so the demo/headline uses 3 robots on an open floor, not this config."""
+
+def test_fleet_composes_with_static_obstacles():
+    """The fleet also avoids the Phase-B static pillars while avoiding each other (2 robots). The
+    priority-yield deadlock breaker unwinds the cluster wedges the bare backstop used to hit in this
+    tighter cell, so it now completes (not just stays collision-free)."""
     world = World(n_machines=3, seed=0, n_obstacles=2, n_robots=2)
     report = run_fleet(
         world, _ground_truth_perceive(world), strategy=longest_waiting, target_parts=6, max_sim_seconds=250,

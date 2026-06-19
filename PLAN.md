@@ -380,3 +380,19 @@ a colour-labelled strip (`/api/robotcams`) shown under the 3D feed — each robo
 it's tending, its own gripper reaching in, and the part. Same thread-safe sim-thread-render → cached-bytes
 pattern as the 3D feed; non-physical cameras, no perception/logic impact. +1 test (strip is 3×CAM_SIZE).
 169 tests green.
+
+## Iteration 5 — Scale to a 4-robot / 4-machine floor + deadlock-free coordination  `[x]`
+
+**Done:** the headline floor is now **4 robots tending 4 machines**. Scaling exposed the symmetric backstop's
+deadlock (clusters freeze); fixed with a **stuck-triggered priority-yield deadlock breaker** (lower-id
+robots back away from higher-id ones only once genuinely stuck) + a wider `_MIN_SEP` for simultaneous
+closure. Machine spacing is now fixed so perception generalizes to 4 machines **with no retrain (100%)**.
+Reviewer SHIP — no collision path, no permanent deadlock, fair throughput, behavior-identical 3-robot
+configs. Verified collision-free + every-part-delivered across 40 seeds (worst body sep 0.45 m). 176 green.
+
+**Deferred (reviewer, non-blocking):** id-priority isn't throughput-optimal and a rare seed takes ~90 s to
+unwind a near-wedge (the 0.02 m `_MIN_SEP`/`_SLOT_SPACING` margin); the proper long-term fix is ORCA /
+prioritized planning. Logged in LEARNINGS + DECISIONS.
+
+**Next ideas:** ORCA-style local avoidance (true deadlock-free coordination); animate the single-robot
+loop's arm; per-robot route colors in the 3D feed.

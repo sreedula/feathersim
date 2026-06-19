@@ -26,7 +26,8 @@ MACHINE_Y = 1.5          # machines sit in a row at this y, doors facing the ori
 TABLE_XY = (0.0, -1.5)   # output/parts table, opposite the machines
 
 # Distinct machine colors (RGB 0–1) so renders/print output are easy to tell apart.
-_MACHINE_COLORS = [(0.85, 0.25, 0.25), (0.25, 0.65, 0.30), (0.90, 0.70, 0.20)]
+_MACHINE_COLORS = [(0.85, 0.25, 0.25), (0.25, 0.65, 0.30), (0.90, 0.70, 0.20), (0.30, 0.55, 0.85)]
+_MACHINE_SPACING = 1.0  # x gap between machines — fixed, so a close-up's neighbor distance is N-invariant
 
 # Status-light color per machine state — the visual cue the perception model learns to read.
 STATE_LIGHT = {
@@ -49,7 +50,7 @@ ROBOT_RADIUS = 0.2                        # base cylinder radius — the occupan
 # corridor bows worst at ~0.29 m vs the 0.2 m radius (see tests/test_planning.py). Applied only to
 # obstacles, not machines/table — those are inflated by the radius alone so tending poses stay reachable.
 OBSTACLE_CLEARANCE = 0.08
-GRID_BOUNDS = (-2.0, -2.0, 2.0, 2.0)      # (xmin, ymin, xmax, ymax) the planner rasterizes over
+GRID_BOUNDS = (-2.6, -2.0, 2.6, 2.0)      # (xmin, ymin, xmax, ymax) the planner rasterizes over (wide for 4 machines)
 # Static obstacles (v2 Phase B): pillars on the table↔machine_2 and table↔machine_0 diagonals so the
 # planner must route around them, kept clear of every tending pose (body clearance is then governed by
 # grid inflation, not by a goal sitting next to a pillar) and spaced so the central x≈0 corridor to
@@ -58,7 +59,7 @@ _OBSTACLE_POSITIONS = [(0.62, 0.0), (-0.62, 0.0)]
 _OBSTACLE_HALF = 0.22
 
 # Multi-robot fleet (v2 Phase C). robot_0 is blue (matches v1); extras get distinct colors.
-_ROBOT_COLORS = [(0.20, 0.50, 0.90), (0.92, 0.45, 0.15), (0.45, 0.80, 0.30)]
+_ROBOT_COLORS = [(0.20, 0.50, 0.90), (0.92, 0.45, 0.15), (0.45, 0.80, 0.30), (0.80, 0.35, 0.80)]
 
 # Arm shoulder-pitch poses (v3): the forearm points +x at angle 0. REST tucks it up (carry); REACH swings
 # it forward+down to grasp from a machine bed or place on the table. Animated kinematically in step().
@@ -72,8 +73,8 @@ def _robot_starts(n_robots: int) -> list[tuple[float, float]]:
     starts on a free cell (a start inside an inflated obstacle would make its first plan fail)."""
     if n_robots == 1:
         return [(0.0, 0.0)]
-    xs = np.linspace(-0.45, 0.45, n_robots)
-    return [(float(x), -0.85) for x in xs]
+    half = 0.225 * (n_robots - 1)            # n=3 → ±0.45 (the tuned 3-robot layout); n=4 → ±0.675
+    return [(float(x), -0.85) for x in np.linspace(-half, half, n_robots)]
 
 
 def _robot_mjcf(n_robots: int) -> str:
@@ -110,10 +111,7 @@ def _robot_mjcf(n_robots: int) -> str:
 
 def _machine_positions(n: int) -> list[tuple[float, float]]:
     """Lay ``n`` machines in a row along x at ``MACHINE_Y``, facing the robot at the origin."""
-    if n == 1:
-        return [(0.0, MACHINE_Y)]
-    xs = np.linspace(-1.0, 1.0, n)
-    return [(float(x), MACHINE_Y) for x in xs]
+    return [(float((i - (n - 1) / 2.0) * _MACHINE_SPACING), MACHINE_Y) for i in range(n)]
 
 
 def _rgba_str(rgb_or_rgba: tuple[float, ...]) -> str:
@@ -168,8 +166,9 @@ def _assets_mjcf(n_machines: int, n_robots: int) -> str:
   </asset>"""
 
 
-# Output-table stack slots (relative to the table body): a 4×3 grid that fills as parts are delivered.
-STACK_SLOTS = [(x, y) for y in (-0.15, 0.0, 0.15) for x in (-0.3, -0.1, 0.1, 0.3)]
+TABLE_HALF = (0.8, 0.3)  # output-table half-extents (x, y) — wide enough for up to 4 delivery slots
+# Output-table stack slots (relative to the table body): a 5×3 grid that fills as parts are delivered.
+STACK_SLOTS = [(x, y) for y in (-0.16, 0.0, 0.16) for x in (-0.56, -0.28, 0.0, 0.28, 0.56)]
 
 
 def _stack_mjcf() -> str:
@@ -212,7 +211,7 @@ def build_mjcf(n_machines: int, n_obstacles: int = 0, n_robots: int = 1) -> str:
     <light pos="-2.5 -1.5 3.5" dir="0.4 0.25 -1" diffuse="0.22 0.24 0.30" castshadow="false"/>
     <geom name="floor" type="plane" size="6 6 0.1" material="floormat"/>{_robot_mjcf(n_robots)}
     <body name="table" pos="{TABLE_XY[0]} {TABLE_XY[1]} 0.2">
-      <geom type="box" size="0.5 0.3 0.2" material="tablemat"/>{_stack_mjcf()}
+      <geom type="box" size="{TABLE_HALF[0]} {TABLE_HALF[1]} 0.2" material="tablemat"/>{_stack_mjcf()}
     </body>{"".join(bodies)}{_obstacle_mjcf(n_obstacles)}
   </worldbody>
 </mujoco>"""
@@ -236,8 +235,8 @@ class World:
     fixtures: dict[str, tuple[float, float]] = field(init=False)
 
     def __post_init__(self) -> None:
-        if not 1 <= self.n_machines <= 3:
-            raise ValueError(f"n_machines must be 1–3, got {self.n_machines}")
+        if not 1 <= self.n_machines <= len(_MACHINE_COLORS):
+            raise ValueError(f"n_machines must be 1–{len(_MACHINE_COLORS)}, got {self.n_machines}")
         if not 0 <= self.n_obstacles <= len(_OBSTACLE_POSITIONS):
             raise ValueError(f"n_obstacles must be 0–{len(_OBSTACLE_POSITIONS)}, got {self.n_obstacles}")
         if not 1 <= self.n_robots <= len(_ROBOT_COLORS):
@@ -460,7 +459,7 @@ class World:
 
     def _footprints(self, obstacle_margin: float) -> list[Rect]:
         rects = [Rect(mx, my, 0.3, 0.3) for mx, my in _machine_positions(self.n_machines)]
-        rects.append(Rect(TABLE_XY[0], TABLE_XY[1], 0.5, 0.3))
+        rects.append(Rect(TABLE_XY[0], TABLE_XY[1], TABLE_HALF[0], TABLE_HALF[1]))
         rects += [
             Rect(ox, oy, _OBSTACLE_HALF + obstacle_margin, _OBSTACLE_HALF + obstacle_margin)
             for ox, oy in _OBSTACLE_POSITIONS[: self.n_obstacles]

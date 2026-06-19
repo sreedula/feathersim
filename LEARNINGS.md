@@ -195,6 +195,23 @@ MuJoCo's default offscreen framebuffer is 640×480, so any `mujoco.Renderer(mode
 errors with a message pointing at `<global offheight>`. Set the global once (≥ the largest renderer) and
 all renderers (32/64/560) share it. Cheap (~one 1280² buffer per GL context).
 
+## 2026-06-19 — A symmetric collision backstop deadlocks at 4 robots; break it with stuck-triggered priority yield (v3)
+Scaling the fleet 3→4 robots, the symmetric contact backstop (each robot stops if its predicted step lands
+too close to another) **deadlocked**: clusters of robots all freeze and never recover (each waits for the
+others). It worked at 3 robots only by having less contention — a latent fragility, not a guarantee.
+Widening the table/cell for 4 robots exposed it even at 3 robots. Fix that *kept* the proven behavior:
+a **stuck-triggered priority yield** — a robot only yields after being backstop-blocked for `_STUCK_TIME`
+(so normal passing is untouched), and yields by backing *away* from any *higher-priority* (lower-id) robot.
+Strict id-priority = a total order ⇒ no yield cycles ⇒ the lowest-id robot in a cluster always progresses.
+Gotchas found while tuning: (1) the yield radius must cover the backstop's *full* reach
+(`_MIN_SEP + _LOOKAHEAD`), or robots freeze just *outside* the yield zone where the backstop still blocks;
+(2) *continuous* (non-stuck-triggered) yielding starves low-priority robots and ~halves throughput — only
+yield when actually stuck; (3) with 4 robots two can close *simultaneously* (each predicts only its own
+step), so `_MIN_SEP` needs margin (0.44→0.48) to keep bodies clear. Residual: `_MIN_SEP` (0.48) is only
+0.02 m under `_SLOT_SPACING` (0.50), so adjacent table-slot approaches occasionally trip the backstop and a
+rare seed takes ~90 s (vs ~35 s) to unwind — completes, but the proper fix is ORCA/prioritized planning.
+Verified collision-free + live across 40 seeds (4×4, 3×3, 3×2), worst body sep 0.45 m.
+
 ## 2026-06-19 — Decouple a kinematic visual joint from the base with `gravcomp`, not low mass (v3)
 Animating the robot arms (a hinge sub-body, qpos slewed kinematically each `step`), the unactuated base
 started drifting — gravity on the (massed) arm transmits a reaction through the shoulder joint to the free

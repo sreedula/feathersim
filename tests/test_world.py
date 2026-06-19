@@ -27,7 +27,7 @@ def test_invalid_machine_count_rejected():
     with pytest.raises(ValueError):
         World(n_machines=0)
     with pytest.raises(ValueError):
-        World(n_machines=4)
+        World(n_machines=5)            # 1–4 supported (one color per machine)
 
 
 def test_step_advances_time():

@@ -43,9 +43,19 @@ _BODY_CLEARANCE = 2.0 * ROBOT_RADIUS
 _WAYPOINT_TOL = 0.12          # advance to the next stored waypoint within this distance
 _REPLAN_INTERVAL = 0.2        # sim seconds between path replans (to react to robots that have moved)
 _ROBOT_MARGIN = 0.08          # extra half-extent when treating another robot as an obstacle (planned gap)
-_MIN_SEP = _BODY_CLEARANCE + 0.04   # symmetric backstop: predicted next position must clear this
+_MIN_SEP = _BODY_CLEARANCE + 0.08   # = 0.48. Symmetric backstop: predicted next position must clear this.
+# Margin above the 0.04 minimum so two robots closing *simultaneously* (each predicts only its own step)
+# still clear bodies — matters most with 4 robots, where head-on encounters are common. NB only 0.02 m below
+# _SLOT_SPACING (0.50): robots converging on *adjacent* delivery slots can trip the backstop on final
+# approach; the deadlock breaker unwinds it, at the cost of an occasional slow seed (see LEARNINGS).
 _LOOKAHEAD = 0.08             # how far ahead (m) to predict the next position for the backstop
-_SLOT_SPACING = 0.5           # x spacing of per-robot delivery slots — > body diameter so neighbours clear
+_SLOT_SPACING = 0.5           # x spacing of per-robot delivery slots — just above _MIN_SEP (0.48), so two
+                              # robots at neighbouring slots clear bodies (tight; see the _MIN_SEP note)
+# Must cover the backstop's full reach (_MIN_SEP + _LOOKAHEAD) plus margin, so whenever the backstop would
+# block a robot near a higher-priority one, that robot yields rather than freezing just outside the zone.
+_YIELD_RADIUS = _MIN_SEP + _LOOKAHEAD + 0.05   # within this of a higher-priority robot, yield (back away)
+_YIELD_STEP = 0.10            # how far the yield maneuver aims, away from the higher-priority robot(s)
+_STUCK_TIME = 0.4             # sim seconds backstop-blocked before the deadlock breaker (yield) engages
 
 
 def _table_slot(world: World, k: int) -> tuple[float, float, float]:
@@ -136,6 +146,26 @@ def _would_collide(world: World, k: int, target_xy: tuple[float, float]) -> bool
     )
 
 
+def _yield_target(world: World, k: int) -> tuple[float, float] | None:
+    """Deadlock breaker. If any *higher-priority* robot (lower id) is within ``_YIELD_RADIUS``, return a
+    point just *away* from those robots for ``k`` to back toward — else None. This breaks the symmetric
+    backstop's failure mode (a cluster of robots all freezing): priority is the strict id order, so the
+    lowest-id robot in any conflict never yields and always makes progress, and the cluster unwinds from
+    the top down. The yield itself is still safety-checked against every robot in :meth:`_drive`."""
+    px, py = world.robot_pose(k)[:2]
+    ax = ay = 0.0
+    for j in range(k):  # only robots with higher priority (strictly lower id)
+        jx, jy = world.robot_pose(j)[:2]
+        d = math.hypot(px - jx, py - jy)
+        if 1e-9 < d < _YIELD_RADIUS:
+            ax += (px - jx) / d
+            ay += (py - jy) / d
+    norm = math.hypot(ax, ay)
+    if norm < 1e-9:
+        return None
+    return (px + ax / norm * _YIELD_STEP, py + ay / norm * _YIELD_STEP)
+
+
 class FleetController:
     """The fleet tick engine: one ``step()`` advances every robot's state machine and the world once.
 
@@ -163,6 +193,7 @@ class FleetController:
         self.path: list[list[tuple[float, float]] | None] = [None] * n
         self.wp = [1] * n
         self.replan_at = [0.0] * n
+        self.blocked_since: list[float | None] = [None] * n  # when the backstop first blocked robot k (deadlock timer)
         self.next_select = [0.0] * n
         self.last_readings: list[dict | None] = [None] * n  # per-robot last perception (for the dashboard)
         self.per_robot = {k: 0 for k in range(n)}
@@ -193,17 +224,27 @@ class FleetController:
         pth = self.path[k]
         while self.wp[k] < len(pth) - 1 and math.dist(pose[:2], pth[self.wp[k]]) <= _WAYPOINT_TOL:
             self.wp[k] += 1
-        if self.wp[k] >= len(pth) - 1:
-            tgt = self.goal[k]
-        else:
-            wx, wy = pth[self.wp[k]]
-            tgt = (wx, wy, math.atan2(wy - pose[1], wx - pose[0]))
-        if _would_collide(world, k, tgt[:2]):
-            world.stop_base(robot=k)
+        tgt = self.goal[k] if self.wp[k] >= len(pth) - 1 else (
+            *pth[self.wp[k]], math.atan2(pth[self.wp[k]][1] - pose[1], pth[self.wp[k]][0] - pose[0]))
+        if not _would_collide(world, k, tgt[:2]):
+            self.blocked_since[k] = None          # path is clear — drive the goal
+            self._command(k, pose, tgt)
             return
+        # Backstop fired. Track how long we've been blocked; once it's a real deadlock (not a transient),
+        # the deadlock breaker kicks in: back away from any higher-priority robot to unwind the cluster.
+        if self.blocked_since[k] is None:
+            self.blocked_since[k] = world.time
+        if world.time - self.blocked_since[k] > _STUCK_TIME:
+            yld = _yield_target(world, k)
+            if yld is not None and not _would_collide(world, k, yld):
+                self._command(k, pose, (yld[0], yld[1], pose[2]))
+                return
+        world.stop_base(robot=k)
+
+    def _command(self, k: int, pose, tgt) -> None:
         vx, vy, omega = self.velocity_fn(pose, tgt, self.gains)
         rvx, rvy, romega = wheels_to_body(body_to_wheels(vx, vy, omega, self.geom), self.geom)
-        world.command_base_velocity(rvx, rvy, romega, robot=k)
+        self.world.command_base_velocity(rvx, rvy, romega, robot=k)
 
     def _advance(self, k: int) -> None:
         world, robot = self.world, self.robots[k]

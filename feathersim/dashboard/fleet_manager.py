@@ -52,7 +52,7 @@ class FleetSimManager:
     """Owns the fleet sim and runs it on a thread; exposes thread-safe telemetry, a schematic, + controls."""
 
     def __init__(
-        self, *, n_machines: int = 3, n_robots: int = 3, n_obstacles: int = 0, seed: int = 0,
+        self, *, n_machines: int = 4, n_robots: int = 4, n_obstacles: int = 0, seed: int = 0,
         render: bool = True, speed: float = 1.0, steps_per_publish: int = 5, difficulty: float = 0.4,
     ) -> None:
         self.world = World(n_machines=n_machines, seed=seed, n_obstacles=n_obstacles, n_robots=n_robots)
@@ -70,7 +70,7 @@ class FleetSimManager:
         self._perc_renderer: mujoco.Renderer | None = None  # built on the sim thread (GL affinity)
         self._feed_renderer: mujoco.Renderer | None = None   # 3D overview feed (also sim-thread)
         self._cam_renderer: mujoco.Renderer | None = None    # per-robot onboard cameras (sim-thread)
-        self._overview_cam = self.world.overview_camera(distance=6.2, elevation=-32.0)
+        self._overview_cam = self.world.overview_camera(distance=7.4, elevation=-30.0)
 
         self.ctrl = FleetController(
             self.world, self._perceive, strategy=longest_waiting, strategy_name="longest_waiting",

@@ -23,7 +23,7 @@ from feathersim.perception.dataset import IMAGE_SIZE  # noqa: E402
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Record the FeatherSim fleet command center to a GIF.")
-    ap.add_argument("--robots", type=int, default=3)
+    ap.add_argument("--robots", type=int, default=4)
     ap.add_argument("--steps", type=int, default=2600, help="sim ticks to record")
     ap.add_argument("--stride", type=int, default=14, help="capture one frame every N ticks")
     ap.add_argument("--fps", type=float, default=14.0)

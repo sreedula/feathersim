@@ -263,6 +263,27 @@ for a fleet view). The cross-thread control writes (`velocity_fn`, `difficulty`)
 intentionally lock-free under the GIL (documented). The slider's `at_difficulty` scales probabilities +
 dominant magnitudes but keeps occluder/blur extents fixed (presence is the dominant lever).
 
+## 2026-06-19 — v3: scale to a 4-robot / 4-machine floor + a priority-yield deadlock breaker
+**Decision:** Bump the headline floor to 4 robots tending 4 machines. The bare symmetric backstop
+(`_would_collide`: stop if your predicted step lands within `_MIN_SEP` of another robot) deadlocks at 4
+robots — clusters all freeze permanently. Added a **stuck-triggered priority yield**: a robot drives its
+plan normally; only after the backstop blocks it continuously for `_STUCK_TIME` (0.4 s) does it *back
+away* from any higher-priority robot (strict id order). The lowest-id robot in any cluster never yields, so
+the cluster unwinds top-down; the yield move is itself backstop-checked, so safety is preserved. Also
+widened `_MIN_SEP` (0.44→0.48) so two robots closing *simultaneously* (each predicts only its own step)
+still clear bodies. Machine spacing is now fixed (`_MACHINE_SPACING`), so a close-up's neighbor distance is
+N-invariant — **perception generalizes to 4 machines with the 3-machine model, no retrain (verified 100%)**.
+**Why:** A busier floor is the "10x" payoff and stresses the system realistically. Stuck-triggered (not
+continuous) yielding leaves normal passing untouched, so throughput is unhurt and the 3-robot configs are
+behavior-identical. Strict id-priority gives a total order → no yield cycles → provably no mutual deadlock.
+**Tradeoff:** Id-priority is not throughput-optimal (high-id robots block more, though measured throughput
+stays fair). `_MIN_SEP` (0.48) sits only 0.02 m below `_SLOT_SPACING` (0.50), so robots converging on
+adjacent table slots can trip the backstop on final approach — the breaker unwinds it, at the cost of an
+occasional slow seed (~90 s vs ~35 s typical). Robust *deadlock-free* coordination (ORCA / prioritized
+planning) is the proper long-term fix; this heuristic is verified collision-free + live across 40 seeds.
+**Rejected:** scaling to 4 robots *without* the breaker (deadlocks); continuous (non-stuck-triggered)
+yielding (starved low-priority robots, ~halved 4×4 throughput).
+
 ## 2026-06-19 — v3: cinematic world + live 3D feed, relative-lighting DR, mix-trained robust model
 **Decision:** Make the sim *look* like a real robotics sim and surface it live. `build_mjcf` now emits a
 `<visual>` (shadows, `<global offwidth/offheight>` for high-res offscreen render, haze) + `<asset>` block

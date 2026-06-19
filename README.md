@@ -8,11 +8,12 @@ controller, and a browser **command center**. Pure simulation — no real hardwa
 
 ![The multi-robot fleet, rendered live](docs/fleet.gif)
 
-*Three robots — each with an **arm + gripper** — tend three machines unattended and collision-free
+*Four robots — each with an **arm + gripper** — tend four machines unattended and collision-free
 (status-light dome = machine state). Each perceives from its own camera, a fleet manager assigns work
-without double-booking, A\* plans each path, and parts **physically ride a gripper from machine to a
-growing stack on the table**. The command center streams this **live 3D view** plus a tactical top-down
-with paths overlaid — with a hand-coded↔learned controller toggle and a perception-difficulty slider — at
+without double-booking, A\* plans each path, a **priority-yield deadlock breaker** keeps the busy floor
+live, and parts **physically ride a gripper from machine to a growing stack on the table**. The command
+center streams this **live 3D view**, each robot's **onboard camera**, and a tactical top-down with paths
+overlaid — with a hand-coded↔learned controller toggle and a perception-difficulty slider — at
 `make dashboard`.*
 
 ## Quickstart
@@ -51,9 +52,10 @@ A walking skeleton built in vertical slices — runnable and demoable at every p
   motion blur) makes perception hard; a robust model **holds where the clean one crumbles**.
 - **Path planning.** A* on an occupancy grid + a waypoint follower; the robot routes around static
   pillars, body clearance proven on every leg it drives.
-- **Multi-robot fleet.** 2–3 robots, a manager that assigns `done` machines without double-booking, a
-  **symmetric contact backstop** that keeps bodies ≥ 2·radius apart (verified collision-free over 160
-  seeded runs), and ≥2 scheduling strategies measured for throughput.
+- **Multi-robot fleet.** Up to 4 robots, a manager that assigns `done` machines without double-booking, a
+  **symmetric contact backstop** + a **stuck-triggered priority-yield deadlock breaker** that keep bodies
+  ≥ 2·radius apart *and* the busy floor live (verified collision-free + every-part-delivered over 40 seeded
+  4×4/3×3/3×2 runs), and ≥2 scheduling strategies measured for throughput.
 - **Learned policy.** Behavior cloning of the hand-coded controller; the learned brain drives the entire
   autonomy loop end-to-end. *(Offline loss didn't predict closed-loop success — a lesson logged.)*
 - **Command center.** This dashboard: a **live cinematic 3D feed** of the cell + a tactical top-down with
