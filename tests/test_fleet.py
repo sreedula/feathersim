@@ -78,6 +78,23 @@ def test_fleet_collision_free_across_seeds(seed):
     # deliberately not asserted here — this test certifies the safety invariant (no collision), not balance.
 
 
+def test_plan_leg_falls_back_when_robots_box_the_goal():
+    """A robot must never be left path-less because *other robots* block its goal/corridor — that's a
+    planning deadly-embrace the collision backstop can't see (it froze the live dashboard). `_plan_leg`
+    treats robots as *soft* obstacles: when the robot-aware plan fails it falls back to a static-only
+    plan, so a path always exists (the per-step backstop still guarantees no contact)."""
+    from feathersim.fleet.executor import _plan_leg
+
+    world = World(n_machines=3, seed=0, n_obstacles=0, n_robots=4)
+    goal = (0.6, 0.4)                                  # open floor (no static obstacle here)
+    world.set_base_pose(0.0, -0.5, 0.0, robot=0)
+    world.set_base_pose(goal[0], goal[1], 0.0, robot=1)  # robot 1 parks *on* robot 0's goal
+    world.set_base_pose(0.3, 0.0, 0.0, robot=2)
+    world.set_base_pose(0.9, 0.4, 0.0, robot=3)
+    path = _plan_leg(world, 0, goal)                   # robot-aware plan fails; fallback must still find one
+    assert path is not None and path[-1] == pytest.approx(goal, abs=0.2)
+
+
 @pytest.mark.parametrize("seed", range(8))
 def test_fleet_scales_to_four_robots(seed):
     """The headline scaled floor: 4 robots tending 4 machines unattended. This is the config that wedged

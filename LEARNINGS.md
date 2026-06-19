@@ -195,6 +195,20 @@ MuJoCo's default offscreen framebuffer is 640×480, so any `mujoco.Renderer(mode
 errors with a message pointing at `<global offheight>`. Set the global once (≥ the largest renderer) and
 all renderers (32/64/560) share it. Cheap (~one 1280² buffer per GL context).
 
+## 2026-06-19 — Robots-as-*hard* planning obstacles cause a deadly-embrace the collision system can't see (v3)
+The live 4×4 dashboard delivered ~32 parts then **froze for 10+ minutes** — robots driving "back and forth"
+but never completing. The collision deadlock breaker was *not* involved (`blocked_since` all None): the
+robots had **`path=None`**. Cause: `_plan_leg` treated every other robot as a *hard* grid obstacle, so two
+robots could box in each other's goal/corridor → `plan_path` returns None for both → both freeze forever.
+The backstop/yield breaker only triggers while *driving*, so it never saw a pathless robot. It only
+surfaced under *real perception* (the assignment timing that produces the embrace) and *after* the opening
+burst — short ground-truth sweeps (the tests) never hit it, which is why 177 green still shipped a frozen
+demo. Fix: make robots **soft** obstacles — when the robot-aware plan fails, fall back to a static-only
+plan; a path then always exists and the per-step `_would_collide` + priority-yield still guarantee no
+contact. Result: 22/min sustained at every difficulty, collision-free (0.45 m), no wedge over 700 s.
+Lesson: a *sustained* multi-robot run is a different test than a *burst*; and "no collision" ≠ "making
+progress" — assert liveness over a long horizon, not just collision-freedom over a short one.
+
 ## 2026-06-19 — A symmetric collision backstop deadlocks at 4 robots; break it with stuck-triggered priority yield (v3)
 Scaling the fleet 3→4 robots, the symmetric contact backstop (each robot stops if its predicted step lands
 too close to another) **deadlocked**: clusters of robots all freeze and never recover (each waits for the

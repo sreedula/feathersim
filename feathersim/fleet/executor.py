@@ -116,12 +116,22 @@ def _min_separation(world: World) -> float:
 
 def _plan_leg(world: World, k: int, goal_xy: tuple[float, float]) -> list[tuple[float, float]] | None:
     """Plan robot ``k``'s path to ``goal_xy`` treating every *other* robot as an obstacle at its current
-    position (so robots route around each other, keeping ≥2·radius apart)."""
+    position (so robots route around each other, keeping ≥2·radius apart).
+
+    If that fails — robots have boxed in the goal or the only corridor — fall back to a **static-only**
+    plan that ignores the movable robots. Treating robots as *soft* obstacles (preferred, not required)
+    is what prevents a planning deadly-embrace (two robots each blocking the other's goal → both stuck on
+    ``path=None`` forever, which the collision backstop never sees). Safety on the fallback path is still
+    hard-guaranteed per step by ``_would_collide`` + the priority-yield breaker."""
+    here = world.robot_pose(k)[:2]
     half = ROBOT_RADIUS + _ROBOT_MARGIN
     extras = [
         Rect(*world.robot_pose(j)[:2], half, half) for j in range(world.n_robots) if j != k
     ]
-    return plan_path(world.occupancy_grid(extra_obstacles=extras), world.robot_pose(k)[:2], goal_xy)
+    return (
+        plan_path(world.occupancy_grid(extra_obstacles=extras), here, goal_xy)
+        or plan_path(world.occupancy_grid(), here, goal_xy)
+    )
 
 
 def _would_collide(world: World, k: int, target_xy: tuple[float, float]) -> bool:
