@@ -170,3 +170,54 @@ def test_wait_until_done_times_out():
     robot = Robot(World(n_machines=1, seed=0))
     with pytest.raises(SkillError, match="not done"):
         robot.wait_until_done("machine_0", timeout_s=0.001)
+
+
+# --- part-transport visuals (v3: carried part rides the gripper; stack grows on the table) ---------
+
+def _carried_alpha(world: World, robot_id: int = 0) -> float:
+    return float(world.model.geom_rgba[world._carried_gid[robot_id], 3])
+
+
+def test_pick_place_toggles_the_carried_part():
+    world = World(n_machines=2, seed=0)
+    robot = Robot(world)
+    _park_at(robot, "machine_0")
+    world.machines[0].state = MachineState.DONE
+    assert _carried_alpha(world) == 0.0          # gripper empty
+    robot.pick("machine_0")
+    assert _carried_alpha(world) == 1.0          # part now rides the gripper
+    _park_at(robot, "table")
+    robot.place("table")
+    assert _carried_alpha(world) == 0.0          # deposited — gripper empty again
+
+
+def test_place_grows_the_table_stack():
+    world = World(n_machines=2, seed=0)
+    robot = Robot(world)
+    for _ in range(3):
+        _park_at(robot, "machine_0")
+        world.machines[0].state = MachineState.DONE
+        robot.pick("machine_0")
+        _park_at(robot, "table")
+        robot.place("table")
+    assert world.delivered_total == 3
+    lit = sum(world.model.geom_rgba[g, 3] > 0.5 for g in world._stack_gid)
+    assert lit == 3                              # three delivered parts visible on the table
+
+
+def test_failed_pick_leaves_gripper_empty():
+    world = World(n_machines=2, seed=0)
+    robot = Robot(world)
+    _park_at(robot, "machine_0")                 # parked, but machine is not done
+    with pytest.raises(SkillError):
+        robot.pick("machine_0")
+    assert _carried_alpha(world) == 0.0          # no phantom part on a failed pick
+
+
+def test_deposit_part_caps_at_stack_capacity():
+    world = World(n_machines=1, seed=0)
+    n_slots = len(world._stack_gid)
+    for _ in range(n_slots + 3):
+        world.deposit_part()                     # must not IndexError past capacity
+    assert world.delivered_total == n_slots + 3
+    assert all(world.model.geom_rgba[g, 3] > 0.5 for g in world._stack_gid)  # all slots filled

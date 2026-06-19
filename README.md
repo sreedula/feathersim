@@ -8,10 +8,12 @@ controller, and a browser **command center**. Pure simulation — no real hardwa
 
 ![The multi-robot fleet, rendered live](docs/fleet.gif)
 
-*Three robots tend three machines unattended and collision-free (status-light dome = machine state). Each
-perceives from its own camera, a fleet manager assigns work without double-booking, and A\* plans each
-path. The command center streams this **live 3D view** plus a tactical top-down with paths overlaid — with
-a hand-coded↔learned controller toggle and a perception-difficulty slider — at `make dashboard`.*
+*Three robots — each with an **arm + gripper** — tend three machines unattended and collision-free
+(status-light dome = machine state). Each perceives from its own camera, a fleet manager assigns work
+without double-booking, A\* plans each path, and parts **physically ride a gripper from machine to a
+growing stack on the table**. The command center streams this **live 3D view** plus a tactical top-down
+with paths overlaid — with a hand-coded↔learned controller toggle and a perception-difficulty slider — at
+`make dashboard`.*
 
 ## Quickstart
 

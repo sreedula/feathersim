@@ -89,6 +89,12 @@ def _robot_mjcf(n_robots: int) -> str:
       <geom type="cylinder" pos="0 0 0.12" size="0.13 0.03" material="robotmat_{k}"/>
       <geom name="heading_{k}" type="box" pos="0.16 0 0.12" size="0.06 0.05 0.02"
             rgba="0.97 0.85 0.15 1"/>
+      <geom type="box" pos="0 0 0.18" size="0.05 0.06 0.045" contype="0" conaffinity="0" material="armmat"/>
+      <geom type="capsule" fromto="0 0 0.20 0.13 0 0.32" size="0.035" contype="0" conaffinity="0" material="armmat"/>
+      <geom type="capsule" fromto="0.13 0 0.32 0.31 0 0.16" size="0.03" contype="0" conaffinity="0" material="armmat"/>
+      <geom type="box" pos="0.33 0 0.15" size="0.03 0.055 0.035" contype="0" conaffinity="0" material="grippermat"/>
+      <geom name="carried_{k}" type="box" pos="0.35 0 0.15" size="0.055 0.055 0.05"
+            contype="0" conaffinity="0" rgba="0.15 0.35 0.95 0"/>
     </body>"""
         )
     return "".join(out)
@@ -148,8 +154,24 @@ def _assets_mjcf(n_machines: int, n_robots: int) -> str:
     <material name="tablemat" rgba="0.50 0.35 0.20 1" specular="0.3" shininess="0.4"/>
     <material name="doormat" rgba="0.09 0.09 0.12 1" specular="0.6" shininess="0.85"/>
     <material name="pillarmat" rgba="0.90 0.42 0.13 1" specular="0.3" shininess="0.5"/>
+    <material name="armmat" rgba="0.78 0.80 0.84 1" specular="0.85" shininess="0.9" reflectance="0.25"/>
+    <material name="grippermat" rgba="0.18 0.19 0.22 1" specular="0.7" shininess="0.85"/>
     {materials}
   </asset>"""
+
+
+# Output-table stack slots (relative to the table body): a 4×3 grid that fills as parts are delivered.
+STACK_SLOTS = [(x, y) for y in (-0.15, 0.0, 0.15) for x in (-0.3, -0.1, 0.1, 0.3)]
+
+
+def _stack_mjcf() -> str:
+    """Delivered-part slots on the output table (alpha 0 until ``set_delivered_count`` reveals them)."""
+    return "".join(
+        f"""
+      <geom name="stack_{j}" type="box" pos="{sx} {sy} 0.26" size="0.06 0.06 0.05"
+            contype="0" conaffinity="0" rgba="0.15 0.35 0.95 0"/>"""
+        for j, (sx, sy) in enumerate(STACK_SLOTS)
+    )
 
 
 def build_mjcf(n_machines: int, n_obstacles: int = 0, n_robots: int = 1) -> str:
@@ -182,7 +204,7 @@ def build_mjcf(n_machines: int, n_obstacles: int = 0, n_robots: int = 1) -> str:
     <light pos="-2.5 -1.5 3.5" dir="0.4 0.25 -1" diffuse="0.22 0.24 0.30" castshadow="false"/>
     <geom name="floor" type="plane" size="6 6 0.1" material="floormat"/>{_robot_mjcf(n_robots)}
     <body name="table" pos="{TABLE_XY[0]} {TABLE_XY[1]} 0.2">
-      <geom type="box" size="0.5 0.3 0.2" material="tablemat"/>
+      <geom type="box" size="0.5 0.3 0.2" material="tablemat"/>{_stack_mjcf()}
     </body>{"".join(bodies)}{_obstacle_mjcf(n_obstacles)}
   </worldbody>
 </mujoco>"""
@@ -241,6 +263,17 @@ class World:
             mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f"occluder_{i}")
             for i in range(self.n_machines)
         ]
+        # Part-transport visuals: a carried-part geom per robot (rides its gripper) + table stack slots.
+        self._carried_gid = [
+            mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f"carried_{k}")
+            for k in range(self.n_robots)
+        ]
+        self._stack_gid = [
+            mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f"stack_{j}")
+            for j in range(len(STACK_SLOTS))
+        ]
+        self.delivered_total = 0
+
         # Authored cinematic key light (light 0) — DR jitters *relative* to this and reset_scene restores
         # it, so perception sees a clean baseline equal to the feed's lighting (no train/serve gap).
         self._light0_pos = self.model.light_pos[0].copy()
@@ -371,6 +404,16 @@ class World:
         self.model.geom_pos[gid] = (bx + dx, by, bz + dz)
         self.model.geom_size[gid] = (size, 0.02, size)
         self.model.geom_rgba[gid, 3] = 1.0 if present else 0.0
+
+    def set_carried(self, robot: int, present: bool) -> None:
+        """Show/hide the part riding ``robot``'s gripper (a robot carries a part between pick and place)."""
+        self.model.geom_rgba[self._carried_gid[robot], 3] = 1.0 if present else 0.0
+
+    def deposit_part(self) -> None:
+        """Reveal the next slot in the output-table stack (a delivered part lands on the table)."""
+        if self.delivered_total < len(self._stack_gid):
+            self.model.geom_rgba[self._stack_gid[self.delivered_total], 3] = 1.0
+        self.delivered_total += 1
 
     def reset_scene(self) -> None:
         """Restore the authored cinematic key light and hide every occluder — the clean render conditions."""

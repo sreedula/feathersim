@@ -34,7 +34,10 @@ from feathersim.sdk.robot import PreconditionError, Robot
 from feathersim.sim.machine import MachineState
 from feathersim.sim.world import ROBOT_RADIUS, TIMESTEP, World
 
-# Arrival slack (match the SDK's "parked" tolerance so pick/place preconditions pass on arrival).
+# Arrival slack — must stay ≤ the SDK's `_at` "parked" tolerance (robot._AT_POSITION/_AT_HEADING), so a
+# robot that the SM considers "arrived" also passes pick/place's precondition. If this were loosened above
+# it, place() would raise after a successful pick — crashing the run and leaving the robot visually stuck
+# carrying its part (carried geom never cleared).
 _ARRIVE_POS, _ARRIVE_HEADING = 0.06, 0.15
 # Two bodies overlap if their centres are closer than the sum of radii.
 _BODY_CLEARANCE = 2.0 * ROBOT_RADIUS

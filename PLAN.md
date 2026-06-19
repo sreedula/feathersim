@@ -351,3 +351,12 @@ upgrades: **relative-lighting DR** (key light jittered around its authored pose;
 
 **Next ideas:** manipulator arms + physical part transport; a parts stack on the table; animated machine
 doors; per-robot onboard camera feeds in the dashboard.
+
+## Iteration 2 — Manipulator arms + physical part transport  `[x]`
+
+**Done:** each robot gains an articulated **arm + gripper** (non-colliding, kinematic base); a part
+**physically rides the gripper** between pick and place; delivered parts **pile up on the output table**
+(a 4×3 stack). `Robot.pick/place` toggle the carried-part visual and grow the stack via `World.set_carried`
+/ `deposit_part`. It now reads as a real machine-tending cell. Reviewer SHIP (additive visual; no race, no
+perception leak — verified 0 px into machine crops; carried flag balanced). Added 4 transport tests +
+documented the SM-arrival ≤ SDK-`_at` tolerance coupling. 167 tests green.

@@ -147,6 +147,7 @@ class Robot:
         part = f"part_{machine}_{m.parts_done}"
         m.reset(self.world.time)  # unload finished part; machine reloads and restarts
         self.holding = part
+        self.world.set_carried(self.robot_id, True)  # the part now rides this robot's gripper
         return part
 
     def place(self, target: str | Pose = "table") -> str:
@@ -160,6 +161,8 @@ class Robot:
             raise PreconditionError(f"not parked at {target!r}; call move_to first")
         part, self.holding = self.holding, None
         self.delivered.append(part)
+        self.world.set_carried(self.robot_id, False)  # part leaves the gripper...
+        self.world.deposit_part()                     # ...and lands on the output-table stack
         return part
 
     def tend(self, machine: str) -> str:
