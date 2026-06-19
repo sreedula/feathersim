@@ -1,0 +1,8 @@
+{
+  "val_mse": 0.0014668076764792204,
+  "expert_reach": 1.0,
+  "policy_reach": 1.0,
+  "expert_avg_steps": 224.45,
+  "policy_avg_steps": 208.425,
+  "n_episodes": 40
+}

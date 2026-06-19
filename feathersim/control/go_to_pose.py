@@ -9,6 +9,7 @@ genuinely load-bearing — until the base is within tolerance, then halts it.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -78,19 +79,26 @@ def pose_error(pose: Pose, target: Pose) -> tuple[float, float]:
     return distance, heading
 
 
+def goal_in_body_frame(pose: Pose, target: Pose) -> tuple[float, float, float]:
+    """The target expressed in the robot's body frame: ``(forward, left, dyaw)``.
+
+    This is the full observation the go-to-pose control law acts on — both the P-controller and the
+    Phase-D learned policy map exactly this 3-vector to a twist, so it's the shared BC observation.
+    """
+    x, y, yaw = pose
+    tx, ty, tyaw = target
+    dx, dy = tx - x, ty - y
+    c, s = math.cos(yaw), math.sin(yaw)
+    return (c * dx + s * dy, -s * dx + c * dy, wrap_to_pi(tyaw - yaw))  # R(-yaw)·error, heading error
+
+
 def velocity_command(pose: Pose, target: Pose, gains: PoseGains = PoseGains()) -> Pose:
     """Pure P-control: world-frame pose error → clamped body-frame twist ``(vx, vy, omega)``.
 
     The translational error is rotated from world frame into the robot's body frame (x-forward,
     y-left) so commanding ``vx``/``vy`` drives that error to zero regardless of heading.
     """
-    x, y, yaw = pose
-    tx, ty, tyaw = target
-    dx, dy = tx - x, ty - y
-    c, s = math.cos(yaw), math.sin(yaw)
-    err_forward = c * dx + s * dy      # R(-yaw) · world error
-    err_left = -s * dx + c * dy
-    dyaw = wrap_to_pi(tyaw - yaw)
+    err_forward, err_left, dyaw = goal_in_body_frame(pose, target)
     vx = _clamp(gains.kp_linear * err_forward, gains.max_linear)
     vy = _clamp(gains.kp_linear * err_left, gains.max_linear)
     omega = _clamp(gains.kp_angular * dyaw, gains.max_angular)
@@ -105,11 +113,13 @@ def drive_to_pose(
     tolerance: PoseTolerance = PoseTolerance(),
     geom: MecanumGeometry = MecanumGeometry(),
     max_steps: int = 5000,
+    velocity_fn: "Callable[[Pose, Pose, PoseGains], Pose]" = velocity_command,
 ) -> DriveResult:
     """Drive the sim base to ``target`` (x, y, yaw); halt on arrival or after ``max_steps``.
 
-    Each tick: compute the body twist, push it through the mecanum inverse then forward kinematics
-    (exact round-trip), command the base, and step the world.
+    Each tick: compute the body twist (via ``velocity_fn`` — the P-controller by default, or the Phase-D
+    learned policy), push it through the mecanum inverse then forward kinematics (exact round-trip),
+    command the base, and step the world.
     """
     for step in range(max_steps):
         pose = world.robot_pose()
@@ -118,7 +128,7 @@ def drive_to_pose(
             world.stop_base()
             return DriveResult(True, step, pose, distance, heading)
 
-        vx, vy, omega = velocity_command(pose, target, gains)
+        vx, vy, omega = velocity_fn(pose, target, gains)
         wheels = body_to_wheels(vx, vy, omega, geom)      # IK: twist → wheel speeds
         rvx, rvy, romega = wheels_to_body(wheels, geom)   # FK: wheel speeds → twist (== input)
         world.command_base_velocity(rvx, rvy, romega)

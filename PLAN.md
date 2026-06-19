@@ -281,12 +281,27 @@ colliding or double-assigning; throughput logged per strategy.
 > ~13% of seeds) can wedge until the time budget — bounded + surfaced; demo uses 3 robots on open floor.
 > Strategies **tie on throughput** (robot-saturated → robot-limited); they'd differ on wait/travel.
 
-## Phase D — Learned policy (behavior cloning)  `[ ]`  ← checkpoint (BC setup + GPU/CPU)
+## Phase D — Learned policy (behavior cloning)  `[x]`  ← checkpoint (BC setup + GPU/CPU)
 
 **Acceptance:** log (observation → action) pairs from the v1 hand-coded controller (the "expert") over
 many cycles; train a small policy net to imitate it (behavior cloning); run the loop driven by the
 learned policy and compare throughput/behavior to the expert. Learned policy runs end-to-end and
 approaches the expert's throughput; comparison logged. Flag if CPU-only training is too slow to run here.
+
+- [x] `control/go_to_pose.py`: `goal_in_body_frame` (shared BC obs) + `velocity_fn` param on `drive_to_pose`
+- [x] `policy/`: `PolicyMLP` (3→128→128→3 tanh), `dataset` (expert twists), `PolicyController` (drop-in `velocity_fn`), `train` (BC + closed-loop compare), `demo`, `make policy`
+- [x] `sdk/robot.py` + `planning/follow.py`: `controller` threaded through **both** straight-line and planned branches
+- [x] Tests: dataset==expert, BC matches expert, drives closed-loop, honors planning, committed metrics, GL loop-on-policy
+- [x] **Checkpoint: confirmed BC setup + CPU decision** (user: "yea go on"); CPU sufficient (tiny MLP, seconds)
+
+> **Result:** val MSE 1.5e-3; learned policy reaches 100% of goals (= expert) in 208 steps vs 224; full
+> loop delivers 6 parts at **112% of the expert's throughput** (committed `metrics_policy.json`).
+> Reviewer: SHIP after one NEEDS-WORK round. Fixed: HIGH — `velocity_fn` now threads through `follow_path`
+> so `plan=True` honors the learned controller (was silently dropped); MEDIUM — `ACTION_SCALE` derived from
+> `PoseGains` (coupling explicit), dropped the dead/misleading clamp in `PolicyController`; LOW — robust
+> demo GL guard. Findings logged: offline BC loss doesn't predict closed-loop reach; tanh head can't hit a
+> saturated target (LEARNINGS). Deferred: the BC is a *soft* task (memoryless control law) — the headline
+> is the pipeline + closed-loop deploy, not difficulty; obstacle-aware policy offered + deferred.
 
 ## Phase E — Command-center dashboard  `[ ]`  ← checkpoint (final demo review)
 

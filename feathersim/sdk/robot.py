@@ -17,6 +17,7 @@ from feathersim.control.go_to_pose import (
     PoseTolerance,
     drive_to_pose,
     pose_error,
+    velocity_command,
 )
 from feathersim.kinematics.holonomic import MecanumGeometry
 from feathersim.planning import follow_path, plan_path
@@ -57,6 +58,7 @@ class Robot:
         tolerance: PoseTolerance = PoseTolerance(),
         geom: MecanumGeometry = MecanumGeometry(),
         plan: bool = False,
+        controller=velocity_command,
     ) -> None:
         self.world = world
         self.robot_id = robot_id              # which base in the world this facade drives
@@ -64,6 +66,8 @@ class Robot:
         self.gains = gains
         self.tolerance = tolerance
         self.geom = geom
+        # The velocity law move_to drives with — the P-controller by default, or a Phase-D learned policy.
+        self._controller = controller
         self.holding: str | None = None      # name of the part currently carried, or None
         self.delivered: list[str] = []        # parts placed on the table, in order
         # With plan=True, move_to routes around the world's obstacles via A* instead of driving straight.
@@ -111,7 +115,7 @@ class Robot:
                 raise SkillError(f"no path to {target!r}")
             result = follow_path(
                 self._driver, waypoints, goal[2], gains=self.gains, geom=self.geom,
-                final_tolerance=self.tolerance,
+                final_tolerance=self.tolerance, velocity_fn=self._controller,
             )
             if not result.reached:
                 raise SkillError(
@@ -120,7 +124,8 @@ class Robot:
                 )
         else:
             result = drive_to_pose(
-                self._driver, goal, gains=self.gains, tolerance=self.tolerance, geom=self.geom
+                self._driver, goal, gains=self.gains, tolerance=self.tolerance, geom=self.geom,
+                velocity_fn=self._controller,
             )
             if not result.reached:
                 raise SkillError(f"could not reach {target!r}: {result.position_error:.3f}m off")

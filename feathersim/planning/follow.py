@@ -9,14 +9,17 @@ waypoints without needing to rotate first.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 
 from feathersim.control.go_to_pose import (
     BaseDriver,
     DriveResult,
+    Pose,
     PoseGains,
     PoseTolerance,
     drive_to_pose,
     pose_error,
+    velocity_command,
 )
 from feathersim.kinematics.holonomic import MecanumGeometry
 
@@ -33,9 +36,12 @@ def follow_path(
     waypoint_tolerance: float = 0.04,
     final_tolerance: PoseTolerance = PoseTolerance(),
     max_steps_per_leg: int = 3000,
+    velocity_fn: "Callable[[Pose, Pose, PoseGains], Pose]" = velocity_command,
 ) -> DriveResult:
     """Drive through ``waypoints`` (last one is the goal, reached at ``final_yaw``).
 
+    ``velocity_fn`` (the P-controller by default, or a learned policy) is forwarded to every leg's
+    :func:`drive_to_pose`, so a planned route honors the same controller as a straight-line one.
     Returns the :class:`DriveResult` of the final leg; if any leg fails to arrive, returns that leg's
     (un-reached) result early so the caller can surface the failure.
     """
@@ -53,7 +59,8 @@ def follow_path(
         if k < len(waypoints) - 1 and pose_error(world.robot_pose(), target)[0] <= waypoint_tolerance:
             continue
         result = drive_to_pose(
-            world, target, gains=gains, tolerance=tol, geom=geom, max_steps=max_steps_per_leg
+            world, target, gains=gains, tolerance=tol, geom=geom, max_steps=max_steps_per_leg,
+            velocity_fn=velocity_fn,
         )
         if not result.reached:
             return result
@@ -61,6 +68,6 @@ def follow_path(
         wx, wy = waypoints[-1]
         result = drive_to_pose(
             world, (wx, wy, final_yaw), gains=gains, tolerance=final_tolerance,
-            geom=geom, max_steps=max_steps_per_leg,
+            geom=geom, max_steps=max_steps_per_leg, velocity_fn=velocity_fn,
         )
     return result

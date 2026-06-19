@@ -151,6 +151,25 @@ is always tending *something*, so which machine it picks doesn't change the rate
 and travel. Throughput is the wrong discriminator for a scheduler under load; latency/fairness is where
 the strategies differ. Worth measuring, but don't expect the headline metric to separate them.
 
+## 2026-06-18 — Offline BC val-loss does NOT predict closed-loop success (v2 Phase D)
+Behavior-cloning the controller, the validation MSE was ~constant at **1.5e-3** across dataset sizes —
+but closed-loop goal-reach went **0.50 → 1.00** between 8k and 12k samples at the *same* val loss. Small
+per-step action errors that the offline metric barely registers **compound over a trajectory** (the robot
+drifts, visits states slightly off the training distribution, errs more). Lesson: never gate a BC policy
+on offline loss — evaluate it **in closed loop** (reach rate / steps), which is the signal that actually
+moves. The test fixture trains a policy big enough to drive (12k/40), and the suite asserts the closed-loop
+*steps* bound, not val MSE. Mirrors the Phase-A "scale matters" lesson but for the *metric*, not the data.
+
+## 2026-06-18 — A tanh head can't reach a saturated target (v2 Phase D)
+The expert P-controller clamps to ±max speed, and with uniform goal sampling ~80% of targets sit *at* the
+clamp. With `ACTION_SCALE` = the caps, those targets land at ±1.0 — the tanh asymptote the head can only
+*approach*. So imitation error concentrates entirely in the saturated regime (a gentle under-shoot near
+±max), while the unsaturated map is learned almost exactly. Benign here (the under-shoot makes the policy
+slightly faster, not unstable) and the test asserts *mean* imitation error + a loose worst-case bound
+rather than tight per-point equality. If exact saturation mattered, widen `ACTION_SCALE` a hair above the
+caps so true ±max sits at ±0.95 (reachable). Lesson: don't put a bounded-asymptote head's target *on* its
+asymptote.
+
 ## 2026-06-18 — Subagents load at session start
 Files added to `.claude/agents/` are NOT available mid-session — they're read when the session
 starts. After creating/editing them, restart Claude Code (or add via `/agents`) before trying to
