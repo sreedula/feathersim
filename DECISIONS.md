@@ -2,6 +2,21 @@
 
 Architecture decision log. Each entry: date, decision, why, tradeoff.
 
+## 2026-06-20 — v4 iter 1: 3-DOF articulated arm (kinematic), not torque-controlled IK
+**Decision:** Replace the single shoulder hinge with a real shoulder→elbow→wrist manipulator (3 pitch
+joints, nested bodies, two-finger gripper, dark joint housings). Still **kinematically animated** — each
+`step` slews all 3 joints toward a fixed joint-space pose (`ARM_REST` carry / `ARM_REACH` reach-arc) and
+zeroes their qvel; every arm body carries `gravcomp="1"`. Poses are tuned constants, verified by render.
+**Why:** "More degrees of freedom" was an explicit ask and the biggest single robotics-realism jump. Keeping
+it kinematic (not torque/IK) preserves determinism, the exact-static-base invariant, and liveness (no grasp
+physics or controller to fail), while looking like a genuine industrial arm. The gravcomp+qvel-zero trick
+already proven for one joint extends cleanly to a 3-body chain (no link can carry momentum or gravity
+reaction into the unactuated base — measured 4e-17 across an asymmetric pose sweep).
+**Tradeoff:** Each reach/retract dwell ~doubled vs the single hinge (more joint travel, slower rate for a
+smoother look) — a realism-for-throughput trade; the 4×4 sweep still completes collision-free in budget.
+Joint-space poses are hand-tuned (no IK solver), so retargeting to a different machine height means
+re-tuning the tuple. `ARM_JOINTS` must stay in sync with the MJCF body chain + tuple arity.
+
 ## 2026-06-18 — Separate sibling repo, not inside loci-mvp
 **Decision:** FeatherSim lives at `/Users/sreekare/feathersim` as its own git repo.
 **Why:** The invocation directory (`loci-mvp`) is an unrelated React/Three.js app with its own

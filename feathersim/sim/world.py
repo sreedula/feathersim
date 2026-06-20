@@ -61,10 +61,15 @@ _OBSTACLE_HALF = 0.22
 # Multi-robot fleet (v2 Phase C). robot_0 is blue (matches v1); extras get distinct colors.
 _ROBOT_COLORS = [(0.20, 0.50, 0.90), (0.92, 0.45, 0.15), (0.45, 0.80, 0.30), (0.80, 0.35, 0.80)]
 
-# Arm shoulder-pitch poses (v3): the forearm points +x at angle 0. REST tucks it up (carry); REACH swings
-# it forward+down to grasp from a machine bed or place on the table. Animated kinematically in step().
-ARM_REST, ARM_REACH = -1.4, -0.15
-ARM_RATE = 4.5  # rad/s the arm slews toward its target
+# Articulated arm (v4): a 3-DOF manipulator — shoulder, elbow, wrist, all pitch about the robot's y axis
+# (each link points +x at angle 0; +angle pitches it down-forward). Joint-space poses are (sh, el, wr)
+# radians, animated kinematically in step(). REST folds it up compact for carrying; REACH extends it
+# forward and down to grasp from a machine bed or place on the table. The wrist keeps the gripper roughly
+# level so the carried part sits flat.
+ARM_JOINTS = 3   # must match the MJCF arm chain (arm0_/arm1_/arm2_ bodies) and the pose-tuple arity below
+ARM_REST = (-1.15, 2.05, 0.65)    # folded up over the deck (carry pose)
+ARM_REACH = (-0.5, 0.4, 0.4)      # extended forward, gripper dipping down into the machine / onto the table
+ARM_RATE = 3.2  # rad/s each joint slews toward its target
 
 
 def _robot_starts(n_robots: int) -> list[tuple[float, float]]:
@@ -96,13 +101,29 @@ def _robot_mjcf(n_robots: int) -> str:
       <geom name="heading_{k}" type="box" pos="0.16 0 0.12" size="0.06 0.05 0.02"
             rgba="0.97 0.85 0.15 1"/>
       <camera name="robotcam_{k}" pos="-0.02 0 0.42" xyaxes="0 -1 0 0.34 0 0.94" fovy="74"/>
-      <geom type="box" pos="0 0 0.19" size="0.05 0.07 0.05" contype="0" conaffinity="0" material="armmat"/>
-      <body name="arm_{k}" pos="0 0 0.23" gravcomp="1">
-        <joint name="arm_{k}" type="hinge" axis="0 1 0"/>
-        <geom type="capsule" fromto="0 0 0 0.30 0 0" size="0.032" contype="0" conaffinity="0" material="armmat"/>
-        <geom type="box" pos="0.33 0 0" size="0.03 0.055 0.04" contype="0" conaffinity="0" material="grippermat"/>
-        <geom name="carried_{k}" type="box" pos="0.37 0 0" size="0.055 0.055 0.05"
-              contype="0" conaffinity="0" rgba="0.15 0.35 0.95 0"/>
+      <!-- shoulder mount turret -->
+      <geom type="box" pos="0 0 0.19" size="0.06 0.08 0.055" contype="0" conaffinity="0" material="armbasemat"/>
+      <geom type="cylinder" pos="0 0 0.25" euler="1.5708 0 0" size="0.045 0.07" contype="0" conaffinity="0" material="jointmat"/>
+      <!-- upper arm: shoulder pitch -->
+      <body name="upperarm_{k}" pos="0 0 0.25" gravcomp="1">
+        <joint name="arm0_{k}" type="hinge" axis="0 1 0"/>
+        <geom type="capsule" fromto="0 0 0 0.24 0 0" size="0.038" contype="0" conaffinity="0" material="armmat"/>
+        <!-- forearm: elbow pitch -->
+        <body name="forearm_{k}" pos="0.24 0 0" gravcomp="1">
+          <joint name="arm1_{k}" type="hinge" axis="0 1 0"/>
+          <geom type="cylinder" pos="0 0 0" euler="1.5708 0 0" size="0.045 0.05" contype="0" conaffinity="0" material="jointmat"/>
+          <geom type="capsule" fromto="0 0 0 0.21 0 0" size="0.030" contype="0" conaffinity="0" material="armmat"/>
+          <!-- wrist + two-finger gripper: wrist pitch -->
+          <body name="wrist_{k}" pos="0.21 0 0" gravcomp="1">
+            <joint name="arm2_{k}" type="hinge" axis="0 1 0"/>
+            <geom type="cylinder" pos="0 0 0" euler="1.5708 0 0" size="0.036 0.04" contype="0" conaffinity="0" material="jointmat"/>
+            <geom type="box" pos="0.06 0 0" size="0.03 0.05 0.035" contype="0" conaffinity="0" material="grippermat"/>
+            <geom type="box" pos="0.115 0 0.038" size="0.035 0.018 0.013" contype="0" conaffinity="0" material="grippermat"/>
+            <geom type="box" pos="0.115 0 -0.038" size="0.035 0.018 0.013" contype="0" conaffinity="0" material="grippermat"/>
+            <geom name="carried_{k}" type="box" pos="0.12 0 0" size="0.042 0.042 0.038"
+                  contype="0" conaffinity="0" rgba="0.15 0.35 0.95 0"/>
+          </body>
+        </body>
       </body>
     </body>"""
         )
@@ -160,8 +181,10 @@ def _assets_mjcf(n_machines: int, n_robots: int) -> str:
     <material name="tablemat" rgba="0.50 0.35 0.20 1" specular="0.3" shininess="0.4"/>
     <material name="doormat" rgba="0.09 0.09 0.12 1" specular="0.6" shininess="0.85"/>
     <material name="pillarmat" rgba="0.90 0.42 0.13 1" specular="0.3" shininess="0.5"/>
-    <material name="armmat" rgba="0.78 0.80 0.84 1" specular="0.85" shininess="0.9" reflectance="0.25"/>
-    <material name="grippermat" rgba="0.18 0.19 0.22 1" specular="0.7" shininess="0.85"/>
+    <material name="armmat" rgba="0.80 0.82 0.86 1" specular="0.9" shininess="0.92" reflectance="0.3"/>
+    <material name="armbasemat" rgba="0.32 0.34 0.40 1" specular="0.6" shininess="0.7"/>
+    <material name="jointmat" rgba="0.12 0.13 0.16 1" specular="0.8" shininess="0.9"/>
+    <material name="grippermat" rgba="0.16 0.17 0.20 1" specular="0.75" shininess="0.88"/>
     {materials}
   </asset>"""
 
@@ -270,13 +293,14 @@ class World:
             mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, f"occluder_{i}")
             for i in range(self.n_machines)
         ]
-        # Per-robot arm shoulder joint (qpos/dof addresses) + slew targets, animated kinematically.
+        # Per-robot articulated arm: the 3 pitch joints' qpos/dof addresses + slew targets (joint-space
+        # poses), animated kinematically. `_arm_pose_adr[k]` is the list of 3 qpos addresses for robot k.
         arm_jids = [
-            mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, f"arm_{k}")
+            [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, f"arm{j}_{k}") for j in range(ARM_JOINTS)]
             for k in range(self.n_robots)
         ]
-        self._arm_pose_adr = [int(self.model.jnt_qposadr[j]) for j in arm_jids]
-        self._arm_dof_adr = [int(self.model.jnt_dofadr[j]) for j in arm_jids]
+        self._arm_pose_adr = [[int(self.model.jnt_qposadr[j]) for j in row] for row in arm_jids]
+        self._arm_dof_adr = [[int(self.model.jnt_dofadr[j]) for j in row] for row in arm_jids]
         self._arm_target = [ARM_REST] * self.n_robots
 
         # Part-transport visuals: a carried-part geom per robot (rides its gripper) + table stack slots.
@@ -316,7 +340,8 @@ class World:
             self.data.qpos[ax] = sx
             self.data.qpos[ay] = sy
         for k in range(self.n_robots):           # arms start tucked in the carry pose
-            self.data.qpos[self._arm_pose_adr[k]] = ARM_REST
+            for adr, angle in zip(self._arm_pose_adr[k], ARM_REST):
+                self.data.qpos[adr] = angle
 
         mujoco.mj_forward(self.model, self.data)
 
@@ -334,11 +359,12 @@ class World:
         # Arm joints are kinematic: slew qpos toward target and zero qvel before the step. The qvel-zeroing
         # is load-bearing (with the arm body's gravcomp="1") for the arm being dynamically inert — it can't
         # accumulate velocity or perturb the base, so the unactuated base stays exactly put.
+        step_max = ARM_RATE * TIMESTEP
         for k in range(self.n_robots):
-            adr = self._arm_pose_adr[k]
-            delta = self._arm_target[k] - self.data.qpos[adr]
-            self.data.qpos[adr] += max(-ARM_RATE * TIMESTEP, min(ARM_RATE * TIMESTEP, delta))
-            self.data.qvel[self._arm_dof_adr[k]] = 0.0
+            for adr, dof, goal in zip(self._arm_pose_adr[k], self._arm_dof_adr[k], self._arm_target[k]):
+                delta = goal - self.data.qpos[adr]
+                self.data.qpos[adr] += max(-step_max, min(step_max, delta))
+                self.data.qvel[dof] = 0.0
         mujoco.mj_step(self.model, self.data)
         for m in self.machines:
             m.update(self.time)
@@ -431,13 +457,17 @@ class World:
         self.model.geom_size[gid] = (size, 0.02, size)
         self.model.geom_rgba[gid, 3] = 1.0 if present else 0.0
 
-    def set_arm_target(self, robot: int, angle: float) -> None:
-        """Command ``robot``'s arm to slew toward ``angle`` (``ARM_REST`` carry / ``ARM_REACH`` grasp)."""
-        self._arm_target[robot] = angle
+    def set_arm_target(self, robot: int, pose: tuple[float, ...]) -> None:
+        """Command ``robot``'s arm to slew toward joint-space ``pose`` (``ARM_REST`` carry / ``ARM_REACH``
+        grasp) — a per-joint (shoulder, elbow, wrist) angle tuple."""
+        self._arm_target[robot] = pose
 
-    def arm_at(self, robot: int, angle: float, tol: float = 0.06) -> bool:
-        """True once ``robot``'s arm has reached ``angle`` — the SM gates pick/place on this."""
-        return abs(float(self.data.qpos[self._arm_pose_adr[robot]]) - angle) <= tol
+    def arm_at(self, robot: int, pose: tuple[float, ...], tol: float = 0.08) -> bool:
+        """True once every joint of ``robot``'s arm has reached ``pose`` — the SM gates pick/place on this."""
+        return all(
+            abs(float(self.data.qpos[adr]) - goal) <= tol
+            for adr, goal in zip(self._arm_pose_adr[robot], pose)
+        )
 
     def set_carried(self, robot: int, present: bool) -> None:
         """Show/hide the part riding ``robot``'s gripper (a robot carries a part between pick and place)."""

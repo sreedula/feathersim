@@ -88,15 +88,20 @@ def test_mjcf_builds_a_fleet():
 
 
 def test_arm_slews_to_target_and_holds_the_base():
-    from feathersim.sim.world import ARM_REACH, ARM_REST
+    from feathersim.sim.world import ARM_JOINTS, ARM_REACH, ARM_REST
     w = World(n_machines=1, seed=0, n_robots=1)
+    assert ARM_JOINTS == 3 and len(ARM_REACH) == len(ARM_REST) == ARM_JOINTS  # 3-DOF manipulator
+    assert len(w._arm_pose_adr[0]) == ARM_JOINTS                              # all 3 joints tracked
     assert w.arm_at(0, ARM_REST)                 # starts tucked in carry pose
     w.set_arm_target(0, ARM_REACH)
-    for _ in range(80):
+    for _ in range(100):
         w.step()
-    assert w.arm_at(0, ARM_REACH)                # reached the grasp pose
+    assert w.arm_at(0, ARM_REACH)                # every joint reached the grasp pose
+    # each joint actually moved to its distinct target (not a no-op / shared scalar)
+    for adr, goal in zip(w._arm_pose_adr[0], ARM_REACH):
+        assert float(w.data.qpos[adr]) == pytest.approx(goal, abs=0.08)
     assert w.robot_pose(0) == pytest.approx((0.0, 0.0, 0.0), abs=1e-6)  # gravcomp → base undisturbed
     w.set_arm_target(0, ARM_REST)
-    for _ in range(80):
+    for _ in range(100):
         w.step()
     assert w.arm_at(0, ARM_REST)                 # retracted

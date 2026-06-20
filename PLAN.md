@@ -396,3 +396,25 @@ prioritized planning. Logged in LEARNINGS + DECISIONS.
 
 **Next ideas:** ORCA-style local avoidance (true deadlock-free coordination); animate the single-robot
 loop's arm; per-robot route colors in the 3D feed.
+
+---
+
+# v4 — "real factory" (1000x realism arc)
+
+Goal: a sim impressive enough to show people. More-DOF articulated arms, a real factory environment,
+a "what the robot sees AND thinks" perception HUD, and a big graphics jump. Five specialist subagents
+in `.claude/agents/` (world-artist, manipulation-engineer, perception-viz-engineer, frontend-designer,
+render-qa) support the loop. Every iteration: build → render-QA → test-runner → reviewer → commit.
+
+- [x] **Iter 1 — Multi-DOF articulated arm.** Single shoulder hinge → a 3-DOF shoulder→elbow→wrist
+      manipulator (two-finger gripper, joint housings); animates a believable reach-into-machine arc.
+      Base stays exactly static (gravcomp + qvel-zero across all 3 nested bodies, verified 4e-17 over an
+      asymmetric pose sweep), arms non-colliding, 4×4/3×3 sweeps collision-free. Reviewer SHIP. 177 green.
+      *Throughput note:* each reach/retract dwell ~doubled vs the v3 single hinge (elbow travels 1.65 rad
+      at 3.2 rad/s ≈ 0.5 s/slew, 4 slews/part) — a deliberate realism tradeoff; the sweep still completes.
+- [ ] **Iter 2 — Factory environment.** Walls, industrial floor, ceiling/overhead lighting, safety
+      striping, richer machine enclosures, props — without touching the perception label crops.
+- [ ] **Iter 3 — Perception HUD ("see what it sees & thinks").** A dashboard panel: raw camera vs the
+      DR-corrupted crop the model received vs the model's per-machine prediction + confidence + agreement.
+- [ ] **Iter 4 — Graphics polish.** Lighting, reflections, camera framing, resolution/AA, color grade —
+      cinematic, "real factory" final pass.
