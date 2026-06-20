@@ -63,6 +63,14 @@
            style="width:100%;border-radius:8px;display:block;background:#000;aspect-ratio:3/1" />
     </div>
     <div class="panel">
+      <h2>Perception — what the model sees &amp; thinks</h2>
+      <img id="perception" src="/api/perception" alt="perception HUD" onerror="this.style.opacity=.3"
+           style="width:100%;border-radius:8px;display:block;background:#000" />
+      <div class="hint">The exact domain-randomized crop the deployed model received for each machine, its
+        inferred state + confidence, and whether it matches ground truth. Raise difficulty → the crops
+        degrade and wrong / low-confidence reads appear.</div>
+    </div>
+    <div class="panel">
       <h2>Tactical — top-down (planned paths overlaid)</h2>
       <img id="schematic" src="/api/camera" alt="fleet schematic" onerror="this.style.opacity=.3" />
     </div>

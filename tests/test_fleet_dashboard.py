@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from feathersim.control.go_to_pose import velocity_command
-from feathersim.dashboard.fleet_manager import CAM_SIZE, FleetSimManager
+from feathersim.dashboard.fleet_manager import CAM_SIZE, HUD_CROP, HUD_FOOTER, HUD_HEADER, HUD_PAD, FleetSimManager
 from feathersim.dashboard.fleet_server import create_app
 from feathersim.perception.randomize import DomainRandomizer
 from feathersim.sim.world import World
@@ -135,6 +135,10 @@ def test_manager_runs_live_and_publishes():
         from PIL import Image
         import io as _io
         assert Image.open(_io.BytesIO(cams)).size == (3 * CAM_SIZE, CAM_SIZE)        # 3 robot views side by side
+        hud = mgr.frame_hud()                                                         # perception "sees & thinks" HUD
+        assert hud is not None and hud[:2] == b"\xff\xd8"
+        assert Image.open(_io.BytesIO(hud)).size == (                                 # one cell per machine
+            mgr.world.n_machines * (HUD_CROP + 2 * HUD_PAD), HUD_HEADER + HUD_CROP + HUD_FOOTER)
         t = mgr.telemetry()
         assert 0.0 <= (t["perception_accuracy"] or 0.0) <= 1.0
         assert len(t["robots"]) == 3 and t["delivered"] >= 0

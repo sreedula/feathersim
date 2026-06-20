@@ -99,6 +99,16 @@ def create_app(manager: FleetSimManager | None = None) -> FastAPI:
             media_type=f"multipart/x-mixed-replace; boundary={_MJPEG_BOUNDARY}",
         )
 
+    @app.get("/api/perception")
+    async def perception(request: Request) -> StreamingResponse:
+        mgr = _manager(request)
+        if mgr.frame_hud() is None:
+            raise HTTPException(status_code=503, detail="perception HUD not ready")
+        return StreamingResponse(
+            _mjpeg(mgr, frame_getter=mgr.frame_hud),
+            media_type=f"multipart/x-mixed-replace; boundary={_MJPEG_BOUNDARY}",
+        )
+
     return app
 
 

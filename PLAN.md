@@ -418,7 +418,10 @@ render-qa) support the loop. Every iteration: build → render-QA → test-runne
       the constant new background (robust 1.0 clean / 0.94 DR, +22.8%). Reviewer SHIP (perception
       soundness, physics/planning, and unchanged lighting all verified empirically); render-QA LOOKS
       GREAT over 9 views. 177 green. (No ceiling — keeps the overhead key light unblocked.)
-- [ ] **Iter 3 — Perception HUD ("see what it sees & thinks").** A dashboard panel: raw camera vs the
-      DR-corrupted crop the model received vs the model's per-machine prediction + confidence + agreement.
+- [x] **Iter 3 — Perception HUD ("see what it sees & thinks").** A live dashboard panel: per machine, the
+      exact DR-corrupted crop the deployed robust model received + its inferred state + confidence bar +
+      OK/X-vs-truth verdict. Raise the difficulty slider → crops visibly degrade, confidence drops, wrong
+      reads flag red. `/api/perception` MJPEG; captured in `_perceive`, composited PIL-only on the sim
+      thread. Reviewer SHIP (thread-safe, shows the *deployed* model's belief on the faithful crop). 177 green.
 - [ ] **Iter 4 — Graphics polish.** Lighting, reflections, camera framing, resolution/AA, color grade —
       cinematic, "real factory" final pass.

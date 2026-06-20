@@ -42,6 +42,10 @@ from feathersim.sim.world import (
 SCHEMATIC_SIZE = 460
 FEED_SIZE = 560  # the cinematic 3D overview feed resolution
 CAM_SIZE = 220   # per-robot onboard camera resolution (composited into a strip)
+HUD_CROP = 150   # the perception-HUD cell renders each machine crop at this size
+HUD_HEADER = 30
+HUD_PAD = 10
+HUD_FOOTER = 62  # cell space below the crop for prediction + confidence bar + verdict
 
 
 def _hex(rgb: tuple[float, float, float]) -> str:
@@ -82,6 +86,10 @@ class FleetSimManager:
         self._frame: bytes | None = None        # schematic JPEG
         self._frame3d: bytes | None = None       # cinematic 3D overview JPEG
         self._frame_cams: bytes | None = None    # per-robot onboard-camera strip JPEG
+        self._frame_hud: bytes | None = None     # perception HUD: what the model saw + inferred
+        # Latest per-machine perception, captured in _perceive for the HUD (the DR-corrupted crop the
+        # robust model actually received + its prediction/confidence + agreement with ground truth).
+        self._hud_data: list[dict | None] = [None] * self.world.n_machines
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
 
@@ -102,6 +110,13 @@ class FleetSimManager:
             out[machine.name] = reading
             self._acc.append(reading.machine_state is machine.state)
             self._acc_clean.append(self.clean_perception.read(image).machine_state is machine.state)
+            # Stash what the model saw + inferred for the perception HUD (latest read wins; same sim thread).
+            self._hud_data[i] = {
+                "crop": np.clip(image, 0, 255).astype(np.uint8),
+                "pred": reading.machine_state, "conf": float(reading.confidence),
+                "true": machine.state, "correct": reading.machine_state is machine.state,
+                "robot": robot_id,
+            }
         return out
 
     # --- lifecycle -----------------------------------------------------------------------
@@ -173,19 +188,67 @@ class FleetSimManager:
         with self._lock:
             return self._frame_cams
 
+    def frame_hud(self) -> bytes | None:
+        with self._lock:
+            return self._frame_hud
+
     # --- publishing ----------------------------------------------------------------------
 
     def _publish(self) -> None:
         telemetry = self._build_telemetry()
         frame = self._render_schematic()
+        frame_hud = self._render_perception_hud()   # PIL-only (uses captured crops); no GL needed
         frame3d = self._render_3d() if self._feed_renderer is not None else None  # also resets the scene clean
         frame_cams = self._render_robotcams() if self._cam_renderer is not None else None
         with self._lock:
             self._snapshot, self._frame = telemetry, frame
+            if frame_hud is not None:
+                self._frame_hud = frame_hud
             if frame3d is not None:
                 self._frame3d = frame3d
             if frame_cams is not None:
                 self._frame_cams = frame_cams
+
+    def _render_perception_hud(self) -> bytes | None:
+        """The headline 'see what the robot sees AND thinks' panel: for each machine, the DR-corrupted
+        crop the robust model actually received, the state it inferred + confidence, and whether that
+        matches ground truth. As the difficulty slider rises, the crops visibly degrade and wrong/low-
+        confidence reads appear — the model's belief shown next to the exact pixels that produced it."""
+        if not any(d is not None for d in self._hud_data):
+            return None
+        n = self.world.n_machines
+        cell_w = HUD_CROP + 2 * HUD_PAD
+        cell_h = HUD_HEADER + HUD_CROP + HUD_FOOTER
+        img = Image.new("RGB", (cell_w * n, cell_h), (13, 15, 19))
+        draw = ImageDraw.Draw(img)
+        for i in range(n):
+            ox = i * cell_w
+            draw.rectangle([ox, 0, ox + cell_w - 1, HUD_HEADER - 1], fill=(22, 26, 32))
+            draw.text((ox + HUD_PAD, 9), f"MACHINE {i}", fill=(212, 218, 226))
+            d = self._hud_data[i]
+            if d is None:
+                draw.text((ox + HUD_PAD, HUD_HEADER + HUD_CROP // 2), "awaiting read", fill=(120, 126, 134))
+                continue
+            crop = Image.fromarray(d["crop"]).resize((HUD_CROP, HUD_CROP), Image.BILINEAR)
+            img.paste(crop, (ox + HUD_PAD, HUD_HEADER))
+            draw.rectangle([ox + HUD_PAD, HUD_HEADER, ox + HUD_PAD + HUD_CROP - 1, HUD_HEADER + HUD_CROP - 1], outline=(44, 50, 58))
+            draw.text((ox + cell_w - HUD_PAD - 42, 9), f"via r{d['robot']}", fill=_hex(_ROBOT_COLORS[d["robot"]]))
+            pcol = _hex(STATE_LIGHT[d["pred"]])
+            py = HUD_HEADER + HUD_CROP + 6
+            draw.ellipse([ox + HUD_PAD, py + 1, ox + HUD_PAD + 11, py + 12], fill=pcol)
+            draw.text((ox + HUD_PAD + 17, py + 1), f"sees: {d['pred'].value}", fill=pcol)
+            cy = py + 20                                   # confidence bar
+            draw.rectangle([ox + HUD_PAD, cy, ox + HUD_PAD + HUD_CROP, cy + 8], fill=(33, 38, 45))
+            draw.rectangle([ox + HUD_PAD, cy, ox + HUD_PAD + int(HUD_CROP * d["conf"]), cy + 8], fill=(68, 147, 248))
+            draw.text((ox + HUD_PAD + HUD_CROP - 34, cy - 2), f"{int(d['conf'] * 100)}%", fill=(184, 190, 198))
+            vy = cy + 13                                   # verdict vs ground truth
+            if d["correct"]:
+                draw.text((ox + HUD_PAD, vy), "OK  matches truth", fill=(46, 204, 85))
+            else:
+                draw.text((ox + HUD_PAD, vy), f"X  wrong (is {d['true'].value})", fill=(248, 81, 73))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=86)
+        return buf.getvalue()
 
     def _render_robotcams(self) -> bytes:
         """Composite each robot's forward onboard camera into a labelled horizontal strip (the scene is

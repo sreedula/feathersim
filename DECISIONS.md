@@ -2,6 +2,19 @@
 
 Architecture decision log. Each entry: date, decision, why, tradeoff.
 
+## 2026-06-20 — v4 iter 3: perception HUD shows the *deployed* model's belief on the *faithful* crop
+**Decision:** A "what the robot sees AND thinks" panel: for each machine, the exact DR-corrupted crop the
+**robust deployed** model received (not the clean baseline, not a re-render), beside its inferred state,
+confidence, and OK/✗ agreement with ground truth. Captured in `_perceive` (the crop is the same uint8 array
+the model read), composited PIL-only on the sim thread, streamed at `/api/perception`.
+**Why:** This is the most legible way to make perception *believable* to a viewer — the model's belief shown
+on the precise pixels that produced it. Tied to the difficulty slider it tells the whole DR story in one
+glance: crisp crops + high confidence at d=0; noisy/blurred crops, dropped confidence, and red wrong-reads
+at d=1. Showing the deployed model (not the clean one) keeps it honest — it's literally what the fleet acts on.
+**Tradeoff:** Latest-read-wins per machine (whichever robot perceived it last; tagged "via rN"), so a cell
+can show a slightly stale read for a machine no robot has visited recently — fine for a live HUD. Uses the
+default PIL bitmap font (ASCII "OK"/"X", no glyph deps). One 64²×3 uint8/machine, overwritten in place.
+
 ## 2026-06-20 — v4 iter 1: 3-DOF articulated arm (kinematic), not torque-controlled IK
 **Decision:** Replace the single shoulder hinge with a real shoulder→elbow→wrist manipulator (3 pitch
 joints, nested bodies, two-finger gripper, dark joint housings). Still **kinematically animated** — each
