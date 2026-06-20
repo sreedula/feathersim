@@ -40,8 +40,8 @@ from feathersim.sim.world import (
 )
 
 SCHEMATIC_SIZE = 460
-FEED_SIZE = 560  # the cinematic 3D overview feed resolution
-CAM_SIZE = 220   # per-robot onboard camera resolution (composited into a strip)
+FEED_SIZE = 720  # the cinematic 3D overview feed resolution (≤ the 1280 offscreen buffer)
+CAM_SIZE = 256   # per-robot onboard camera resolution (composited into a strip)
 HUD_CROP = 150   # the perception-HUD cell renders each machine crop at this size
 HUD_HEADER = 30
 HUD_PAD = 10
@@ -74,7 +74,7 @@ class FleetSimManager:
         self._perc_renderer: mujoco.Renderer | None = None  # built on the sim thread (GL affinity)
         self._feed_renderer: mujoco.Renderer | None = None   # 3D overview feed (also sim-thread)
         self._cam_renderer: mujoco.Renderer | None = None    # per-robot onboard cameras (sim-thread)
-        self._overview_cam = self.world.overview_camera(distance=7.4, elevation=-30.0)
+        self._overview_cam = self.world.overview_camera(distance=7.0, elevation=-23.0, azimuth=92.0)
 
         self.ctrl = FleetController(
             self.world, self._perceive, strategy=longest_waiting, strategy_name="longest_waiting",
@@ -271,7 +271,7 @@ class FleetSimManager:
         self.world.sync_visuals()
         rgb = self.world.render(self._feed_renderer, self._overview_cam)
         buf = io.BytesIO()
-        Image.fromarray(rgb).save(buf, format="JPEG", quality=82)
+        Image.fromarray(rgb).save(buf, format="JPEG", quality=88)
         return buf.getvalue()
 
     def _build_telemetry(self) -> dict:

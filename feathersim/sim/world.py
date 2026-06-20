@@ -165,7 +165,7 @@ def _assets_mjcf(n_machines: int, n_robots: int) -> str:
         mats.append(f'<material name="machmat_{i}" rgba="{r} {g} {b} 1" specular="0.5" shininess="0.55" reflectance="0.12"/>')
     for k in range(n_robots):
         r, g, b = _ROBOT_COLORS[k % len(_ROBOT_COLORS)]
-        mats.append(f'<material name="robotmat_{k}" rgba="{r} {g} {b} 1" specular="0.75" shininess="0.85" reflectance="0.2"/>')
+        mats.append(f'<material name="robotmat_{k}" rgba="{r} {g} {b} 1" specular="0.85" shininess="0.9" reflectance="0.28"/>')
     materials = "\n    ".join(mats)
     return f"""
   <visual>
@@ -176,7 +176,7 @@ def _assets_mjcf(n_machines: int, n_robots: int) -> str:
     <rgba haze="0.10 0.13 0.18 1"/>
   </visual>
   <asset>
-    <texture name="skybox" type="skybox" builtin="gradient" rgb1="0.34 0.45 0.58" rgb2="0.03 0.05 0.09" width="512" height="512"/>
+    <texture name="skybox" type="skybox" builtin="gradient" rgb1="0.42 0.52 0.64" rgb2="0.04 0.06 0.11" width="512" height="512"/>
     <texture name="floortex" type="2d" builtin="checker" rgb1="0.15 0.17 0.21" rgb2="0.21 0.23 0.27" width="512" height="512"/>
     <material name="floormat" texture="floortex" texrepeat="20 20" specular="0.2" shininess="0.3" reflectance="0.12"/>
     <!-- v4 factory environment (decor only — non-colliding, in the periphery, perception crops untouched) -->
@@ -192,7 +192,7 @@ def _assets_mjcf(n_machines: int, n_robots: int) -> str:
     <material name="tablemat" rgba="0.50 0.35 0.20 1" specular="0.3" shininess="0.4"/>
     <material name="doormat" rgba="0.09 0.09 0.12 1" specular="0.6" shininess="0.85"/>
     <material name="pillarmat" rgba="0.90 0.42 0.13 1" specular="0.3" shininess="0.5"/>
-    <material name="armmat" rgba="0.80 0.82 0.86 1" specular="0.9" shininess="0.92" reflectance="0.3"/>
+    <material name="armmat" rgba="0.82 0.84 0.88 1" specular="0.95" shininess="0.95" reflectance="0.4"/>
     <material name="armbasemat" rgba="0.32 0.34 0.40 1" specular="0.6" shininess="0.7"/>
     <material name="jointmat" rgba="0.12 0.13 0.16 1" specular="0.8" shininess="0.9"/>
     <material name="grippermat" rgba="0.16 0.17 0.20 1" specular="0.75" shininess="0.88"/>

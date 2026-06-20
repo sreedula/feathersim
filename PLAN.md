@@ -423,5 +423,7 @@ render-qa) support the loop. Every iteration: build → render-QA → test-runne
       OK/X-vs-truth verdict. Raise the difficulty slider → crops visibly degrade, confidence drops, wrong
       reads flag red. `/api/perception` MJPEG; captured in `_perceive`, composited PIL-only on the sim
       thread. Reviewer SHIP (thread-safe, shows the *deployed* model's belief on the faithful crop). 177 green.
-- [ ] **Iter 4 — Graphics polish.** Lighting, reflections, camera framing, resolution/AA, color grade —
-      cinematic, "real factory" final pass.
+- [x] **Iter 4 — Graphics polish.** Feed resolution 560→720 + onboard cams 220→256 + higher JPEG quality;
+      a lower eye-level cinematic overview framing (dist 7.0 / elev -23° / az 92°); more metallic reflective
+      arms + robots; richer skybox. All perception-safe — machine close-up crops verified **byte-identical**
+      (max diff 0), so no retrain. 177 green; hero GIF regenerated.
