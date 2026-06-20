@@ -412,8 +412,12 @@ render-qa) support the loop. Every iteration: build → render-QA → test-runne
       asymmetric pose sweep), arms non-colliding, 4×4/3×3 sweeps collision-free. Reviewer SHIP. 177 green.
       *Throughput note:* each reach/retract dwell ~doubled vs the v3 single hinge (elbow travels 1.65 rad
       at 3.2 rad/s ≈ 0.5 s/slew, 4 slews/part) — a deliberate realism tradeoff; the sweep still completes.
-- [ ] **Iter 2 — Factory environment.** Walls, industrial floor, ceiling/overhead lighting, safety
-      striping, richer machine enclosures, props — without touching the perception label crops.
+- [x] **Iter 2 — Factory environment.** Enclosing hall walls + blue dado, yellow floor safety-lane
+      striping, periphery props (pallets/crates, tool cabinet, shelving, safety beacons), reflective
+      industrial floor — all non-colliding, outside the work area, perception crops re-trained to absorb
+      the constant new background (robust 1.0 clean / 0.94 DR, +22.8%). Reviewer SHIP (perception
+      soundness, physics/planning, and unchanged lighting all verified empirically); render-QA LOOKS
+      GREAT over 9 views. 177 green. (No ceiling — keeps the overhead key light unblocked.)
 - [ ] **Iter 3 — Perception HUD ("see what it sees & thinks").** A dashboard panel: raw camera vs the
       DR-corrupted crop the model received vs the model's per-machine prediction + confidence + agreement.
 - [ ] **Iter 4 — Graphics polish.** Lighting, reflections, camera framing, resolution/AA, color grade —

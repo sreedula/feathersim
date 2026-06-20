@@ -1,4 +1,5 @@
-"""MuJoCo sim world: floor, holonomic robot base, parts table, 2–3 machines. [Phase 1]
+"""MuJoCo sim world: a factory hall — floor, holonomic robot bases with articulated arms, parts table,
+1–4 machines, and periphery props. [Phase 1; arms v4-i1; factory env v4-i2]
 
 Builds an MJCF model programmatically (so machine count is configurable), wraps ``MjModel`` /
 ``MjData``, and ticks the pure machine FSMs each physics step. Headless and deterministic given a
@@ -177,7 +178,17 @@ def _assets_mjcf(n_machines: int, n_robots: int) -> str:
   <asset>
     <texture name="skybox" type="skybox" builtin="gradient" rgb1="0.34 0.45 0.58" rgb2="0.03 0.05 0.09" width="512" height="512"/>
     <texture name="floortex" type="2d" builtin="checker" rgb1="0.15 0.17 0.21" rgb2="0.21 0.23 0.27" width="512" height="512"/>
-    <material name="floormat" texture="floortex" texrepeat="14 14" specular="0.2" shininess="0.3" reflectance="0.12"/>
+    <material name="floormat" texture="floortex" texrepeat="20 20" specular="0.2" shininess="0.3" reflectance="0.12"/>
+    <!-- v4 factory environment (decor only — non-colliding, in the periphery, perception crops untouched) -->
+    <material name="wallmat" rgba="0.46 0.48 0.52 1" specular="0.15" shininess="0.2" reflectance="0.04"/>
+    <material name="dadomat" rgba="0.22 0.34 0.46 1" specular="0.25" shininess="0.35"/>
+    <material name="hazardmat" rgba="0.95 0.78 0.12 1" specular="0.2" shininess="0.3" emission="0.18"/>
+    <material name="palletmat" rgba="0.52 0.38 0.22 1" specular="0.1" shininess="0.2"/>
+    <material name="cratemat" rgba="0.62 0.50 0.34 1" specular="0.15" shininess="0.25"/>
+    <material name="crate2mat" rgba="0.40 0.45 0.52 1" specular="0.35" shininess="0.5"/>
+    <material name="cabinetmat" rgba="0.20 0.42 0.58 1" specular="0.45" shininess="0.6" reflectance="0.1"/>
+    <material name="beaconmat" rgba="0.95 0.45 0.12 1" specular="0.5" shininess="0.7" emission="0.25"/>
+    <material name="panelmat" rgba="0.10 0.11 0.13 1" specular="0.6" shininess="0.8"/>
     <material name="tablemat" rgba="0.50 0.35 0.20 1" specular="0.3" shininess="0.4"/>
     <material name="doormat" rgba="0.09 0.09 0.12 1" specular="0.6" shininess="0.85"/>
     <material name="pillarmat" rgba="0.90 0.42 0.13 1" specular="0.3" shininess="0.5"/>
@@ -202,6 +213,51 @@ def _stack_mjcf() -> str:
             contype="0" conaffinity="0" rgba="0.15 0.35 0.95 0"/>"""
         for j, (sx, sy) in enumerate(STACK_SLOTS)
     )
+
+
+def _factory_mjcf() -> str:
+    """The v4 factory hall: enclosing walls, floor safety-striping, and periphery props. PURELY visual —
+    every geom is ``contype=0 conaffinity=0`` and sits well outside the robot work area (|x|,|y| ≤ ~2.6)
+    and outside every machine's front close-up frame, so neither physics, planning, nor perception change."""
+    walls = """
+    <!-- enclosing hall walls (room ~15×15, open top so the overhead key light is never blocked) -->
+    <geom type="box" pos="0 7.6 2.4" size="7.8 0.25 2.4" contype="0" conaffinity="0" material="wallmat"/>
+    <geom type="box" pos="0 7.34 1.05" size="7.8 0.04 0.32" contype="0" conaffinity="0" material="dadomat"/>
+    <geom type="box" pos="0 -7.6 2.4" size="7.8 0.25 2.4" contype="0" conaffinity="0" material="wallmat"/>
+    <geom type="box" pos="7.6 0 2.4" size="0.25 7.8 2.4" contype="0" conaffinity="0" material="wallmat"/>
+    <geom type="box" pos="7.34 0 1.05" size="0.04 7.8 0.32" contype="0" conaffinity="0" material="dadomat"/>
+    <geom type="box" pos="-7.6 0 2.4" size="0.25 7.8 2.4" contype="0" conaffinity="0" material="wallmat"/>
+    <geom type="box" pos="-7.34 0 1.05" size="0.04 7.8 0.32" contype="0" conaffinity="0" material="dadomat"/>"""
+    # Yellow safety lane painted on the floor, bordering the work cell (just outside the planner bounds).
+    bx, by = 3.5, 2.5
+    stripes = "".join(f"""
+    <geom type="box" pos="{px} {py} 0.012" size="{sx} {sy} 0.004" contype="0" conaffinity="0" material="hazardmat"/>"""
+        for (px, py, sx, sy) in [
+            (0, by, bx, 0.06), (0, -by, bx, 0.06), (bx, 0, 0.06, by), (-bx, 0, 0.06, by),
+        ])
+    # Periphery props: pallet+crate stacks, a tool cabinet, shelving, a loose crate. Factory clutter.
+    props = """
+    <!-- pallet + stacked crates, left bay -->
+    <geom type="box" pos="-5.2 -3.3 0.07" size="0.62 0.5 0.07" contype="0" conaffinity="0" material="palletmat"/>
+    <geom type="box" pos="-5.35 -3.45 0.33" size="0.34 0.3 0.22" contype="0" conaffinity="0" material="cratemat"/>
+    <geom type="box" pos="-4.95 -3.15 0.33" size="0.28 0.26 0.22" contype="0" conaffinity="0" material="crate2mat"/>
+    <geom type="box" pos="-5.2 -3.35 0.72" size="0.3 0.28 0.18" contype="0" conaffinity="0" material="cratemat"/>
+    <!-- pallet + crate, right bay -->
+    <geom type="box" pos="5.0 -3.6 0.07" size="0.6 0.5 0.07" contype="0" conaffinity="0" material="palletmat"/>
+    <geom type="box" pos="5.0 -3.6 0.37" size="0.42 0.4 0.26" contype="0" conaffinity="0" material="crate2mat"/>
+    <!-- tool cabinet against the back-left, with a safety beacon on top -->
+    <geom type="box" pos="-3.6 6.9 0.8" size="0.45 0.4 0.8" contype="0" conaffinity="0" material="cabinetmat"/>
+    <geom type="box" pos="-3.6 6.48 1.1" size="0.4 0.02 0.45" contype="0" conaffinity="0" material="panelmat"/>
+    <geom type="cylinder" pos="-3.6 6.9 1.68" size="0.07 0.08" contype="0" conaffinity="0" material="beaconmat"/>
+    <!-- shelving unit, back-right, with a safety beacon -->
+    <geom type="cylinder" pos="4.4 6.9 2.6" size="0.08 0.09" contype="0" conaffinity="0" material="beaconmat"/>
+    <geom type="box" pos="4.4 6.9 1.25" size="1.1 0.35 1.25" contype="0" conaffinity="0" material="cabinetmat"/>
+    <geom type="box" pos="4.4 6.5 0.6" size="1.05 0.02 0.04" contype="0" conaffinity="0" material="panelmat"/>
+    <geom type="box" pos="4.4 6.5 1.3" size="1.05 0.02 0.04" contype="0" conaffinity="0" material="panelmat"/>
+    <!-- loose crate stack, far right -->
+    <geom type="box" pos="6.2 1.5 0.4" size="0.45 0.45 0.4" contype="0" conaffinity="0" material="cratemat"/>
+    <geom type="box" pos="6.2 1.5 0.98" size="0.35 0.35 0.18" contype="0" conaffinity="0" material="crate2mat"/>"""
+    return walls + stripes + props
 
 
 def build_mjcf(n_machines: int, n_obstacles: int = 0, n_robots: int = 1) -> str:
@@ -232,7 +288,7 @@ def build_mjcf(n_machines: int, n_obstacles: int = 0, n_robots: int = 1) -> str:
     <light pos="1.5 1.0 5" dir="-0.25 -0.2 -1" directional="true" diffuse="0.65 0.65 0.68"
            specular="0.3 0.3 0.3" castshadow="true"/>
     <light pos="-2.5 -1.5 3.5" dir="0.4 0.25 -1" diffuse="0.22 0.24 0.30" castshadow="false"/>
-    <geom name="floor" type="plane" size="6 6 0.1" material="floormat"/>{_robot_mjcf(n_robots)}
+    <geom name="floor" type="plane" size="8.5 8.5 0.1" material="floormat"/>{_factory_mjcf()}{_robot_mjcf(n_robots)}
     <body name="table" pos="{TABLE_XY[0]} {TABLE_XY[1]} 0.2">
       <geom type="box" size="{TABLE_HALF[0]} {TABLE_HALF[1]} 0.2" material="tablemat"/>{_stack_mjcf()}
     </body>{"".join(bodies)}{_obstacle_mjcf(n_obstacles)}

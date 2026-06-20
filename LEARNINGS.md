@@ -195,6 +195,18 @@ MuJoCo's default offscreen framebuffer is 640×480, so any `mujoco.Renderer(mode
 errors with a message pointing at `<global offheight>`. Set the global once (≥ the largest renderer) and
 all renderers (32/64/560) share it. Cheap (~one 1280² buffer per GL context).
 
+## 2026-06-20 — Decor behind the machines lands in the perception crop; retrain, don't hide (v4)
+Adding the factory environment, the yellow floor safety-stripe (and walls) showed up in the *background*
+of the machine close-up the CNN reads — the crops were no longer byte-identical (max pixel diff 162). Two
+options: keep decor out of every close-up sightline (fragile, constrains the art), or retrain via the
+auto-label pipeline so the model sees the deployed scene (the v3 "no train/serve gap" principle). Retrain
+won: a **constant** background element carries zero correlation with the label, so it can't become a
+shortcut — verified the stripe is an identical pixel band across all states. Accuracy actually *improved*
+(robust DR 0.906→0.939). Lesson: when the deployed visuals change, retrain on them rather than contort the
+scene to preserve old pixels; a classifier ignores constant background for free. (Caught it by snapshotting
+the exact `render_machine` crops to .npy *before* the change and asserting byte-equality after — a cheap,
+decisive perception-safety gate worth doing on any world-geometry edit.)
+
 ## 2026-06-19 — Robots-as-*hard* planning obstacles cause a deadly-embrace the collision system can't see (v3)
 The live 4×4 dashboard delivered ~32 parts then **froze for 10+ minutes** — robots driving "back and forth"
 but never completing. The collision deadlock breaker was *not* involved (`blocked_since` all None): the
