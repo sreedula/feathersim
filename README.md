@@ -8,19 +8,19 @@ controller, and a browser **command center**. Pure simulation — no real hardwa
 
 ![The multi-robot fleet, rendered live](docs/fleet.gif)
 
-*Four robots — each with an **arm + gripper** — tend four machines unattended and collision-free
-(status-light dome = machine state). Each perceives from its own camera, a fleet manager assigns work
-without double-booking, A\* plans each path, a **priority-yield deadlock breaker** keeps the busy floor
-live, and parts **physically ride a gripper from machine to a growing stack on the table**. The command
-center streams this **live 3D view**, each robot's **onboard camera**, and a tactical top-down with paths
-overlaid — with a hand-coded↔learned controller toggle and a perception-difficulty slider — at
-`make dashboard`.*
+*Four robots — each with a **3-DOF articulated arm + gripper** — tend four machines on a **factory floor**,
+unattended and collision-free (status-light dome = machine state). Each perceives from its own camera, a
+fleet manager assigns work without double-booking, A\* plans each path, a **priority-yield deadlock breaker**
+keeps the busy floor live, and the arms **reach into a machine, grasp a part, and stack it on the output
+table**. The command center streams this **live cinematic 3D view**, each robot's **onboard camera**, a
+**perception HUD** (what the model sees & infers), and a tactical top-down with paths overlaid — with a
+hand-coded↔learned controller toggle and a perception-difficulty slider — at `make dashboard`.*
 
 ## Quickstart
 
 ```bash
 make install     # pip install -r requirements.txt  (Python 3.11+)
-make test        # pytest — 176 tests
+make test        # pytest — 177 tests
 make demo        # headless single-robot autonomy loop (routes around obstacles)
 make fleet       # headless 4-robot fleet, compares scheduling strategies, collision-free
 make dashboard   # the command center at http://localhost:8000  (3D feed + onboard cams + paths + toggle + slider)
@@ -39,7 +39,7 @@ A walking skeleton built in vertical slices — runnable and demoable at every p
 | **Kinematics** | `feathersim/kinematics/` | Holonomic **mecanum** drive math — pure inverse/forward kinematics, no sim import. |
 | **Control** | `feathersim/control/` | Go-to-pose P-controller; the body twist is routed through the wheel IK→FK each tick. Pluggable `velocity_fn`. |
 | **Skill SDK** | `feathersim/sdk/` | A `Robot` facade hiding joints/MJCF/kinematics: `move_to / pick / place / tend`. Preconditions raise `SkillError`. |
-| **Perception** | `feathersim/perception/` | Renders per-machine crops, **auto-labels** from ground-truth configs, trains a 2-head CNN. The deployed model trains on a **clean+randomized mix**: **1.0 clean *and* 0.91 under domain randomization** (+19 pts over a clean-only model's 0.71; 0.37 baseline). |
+| **Perception** | `feathersim/perception/` | Renders per-machine crops, **auto-labels** from ground-truth configs, trains a 2-head CNN. The deployed model trains on a **clean+randomized mix**: **1.0 clean *and* 0.94 under domain randomization** (+23 pts over a clean-only model's 0.71; 0.37 baseline). |
 | **Planning** | `feathersim/planning/` | Occupancy grid + 8-connected **A\*** + line-of-sight smoothing + a waypoint follower. Routes around obstacles. |
 | **Autonomy** | `feathersim/autonomy/` | The single-robot loop: perceive → tend the longest-waiting perceived-`done` machine → repeat. Selects on **perception, never ground truth**. |
 | **Fleet** | `feathersim/fleet/` | Multi-robot tick engine (up to 4): task allocation (no double-booking), **symmetric collision avoidance** + a **priority-yield deadlock breaker**, pluggable scheduling. |
@@ -81,6 +81,27 @@ Five polish iterations layered on top, each through the full engineering loop (r
    **stuck-triggered priority-yield deadlock breaker** keeps the contended floor live where the bare
    symmetric backstop would freeze — verified collision-free *and* every-part-delivered across 40 seeds.
 
+## v4 — a real factory floor
+
+Four more iterations to make it genuinely showable, each through the same loop (reviewer SHIP on all four):
+
+1. **3-DOF articulated arms.** The single hinge became a real shoulder→elbow→wrist manipulator with a
+   two-finger gripper — it visibly **arcs into the machine to grasp** and extends over the table to place.
+   Still kinematically animated, `gravcomp`-decoupled so the base stays exactly static (verified 4e-17).
+2. **Factory environment.** Enclosing hall walls + dado, yellow floor safety-lane striping, periphery props
+   (pallets, crates, tool cabinet, shelving, safety beacons), reflective industrial floor — all
+   non-colliding and outside the work area. Perception retrained on the new look (a constant background is
+   uninformative → accuracy *rose* to 0.94 under DR).
+3. **Perception HUD — "what the model sees & thinks."** For each machine, the exact domain-randomized crop
+   the deployed model received, its inferred state + confidence, and an OK/✗ verdict vs ground truth. Drag
+   the difficulty slider and watch crops degrade, confidence drop, and wrong reads flag red in real time.
+4. **Graphics polish.** Higher-resolution feeds, a cinematic eye-level overview, metallic reflective arms —
+   all perception-safe (close-up crops verified byte-identical, no retrain).
+
+Five specialist subagents (`world-artist`, `manipulation-engineer`, `perception-viz-engineer`,
+`frontend-designer`, `render-qa`) in [`.claude/agents/`](.claude/agents) support this arc — `render-qa`
+visually inspects every change, `reviewer` audits every diff.
+
 ## How the loop closes
 
 ```
@@ -104,7 +125,7 @@ Every phase ran the same loop: smallest vertical slice → `test-runner` (nothin
 independent `reviewer` (address CRITICAL/HIGH before commit) → log `DECISIONS`/`LEARNINGS` → commit. The
 reviewer caught bugs a green suite hid — a robot body silently clipping a pillar (planning protects the
 *center*, the follower bows), a collision guarantee that held only on the lucky seed 0, and a 4-robot
-deadlock the bare backstop masked. All are written up in [`LEARNINGS.md`](LEARNINGS.md). **176 tests**;
+deadlock the bare backstop masked. All are written up in [`LEARNINGS.md`](LEARNINGS.md). **177 tests**;
 rendering-dependent tests skip without a GL backend (`MUJOCO_GL=egl`/`osmesa` to run them in CI).
 
 ## Docs
