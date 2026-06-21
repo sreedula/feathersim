@@ -5,12 +5,12 @@ re-expressed as a tick loop: every tick each robot advances its own state machin
 pick → to_table → place`) by one step, then the world steps once. Coordination:
 
 - **Task allocation** via :class:`FleetManager` — a machine is locked to one robot, never double-booked.
-- **Collision avoidance** has two layers: each robot **plans around every other robot** (treated as an
-  inflated obstacle, replanned periodically), and a **symmetric contact backstop** (:func:`_would_collide`)
-  stops any robot whose predicted next step would land within a body-clearance of another — so no robot,
-  including the highest-priority one, can drive into another. Trade-off: unlike a strict-priority scheme,
-  this offers no structural no-deadlock guarantee, so two robots in a tight cell can occasionally wedge;
-  that's bounded by ``max_sim_seconds`` and surfaced as ``FleetReport.completed == False``.
+- **Collision avoidance** is two clean layers: **A*** plans each leg around the *static* world (machines,
+  table, pillars), and **ORCA** (:mod:`feathersim.fleet.orca`, reciprocal velocity obstacles) makes the
+  per-tick velocity collision-free against the *other robots*. ORCA is smooth, reciprocal, and — unlike the
+  old symmetric backstop — deadlock-free; a small symmetry-breaking bias on the preferred velocity resolves
+  perfectly-symmetric encounters. Because planning ignores the movable robots, there is also no planning
+  deadly-embrace (a robot is never left path-less by another robot parking on its goal).
 - **Per-robot perception**: each robot reads the machine cameras through its *own* randomized sensor
   (Phase-A `corrupt_image`), so robots can genuinely disagree; the robust model usually still gets it right.
 """
@@ -25,11 +25,11 @@ import numpy as np
 
 from feathersim.control.go_to_pose import PoseGains, pose_error, velocity_command
 from feathersim.fleet.manager import FleetManager
+from feathersim.fleet.orca import ORCAAgent, new_velocity
 from feathersim.fleet.scheduling import Strategy
 from feathersim.kinematics.holonomic import MecanumGeometry, body_to_wheels, wheels_to_body
 from feathersim.perception.infer import PerceivedState
 from feathersim.planning import plan_path
-from feathersim.planning.occupancy import Rect
 from feathersim.sdk.robot import PreconditionError, Robot
 from feathersim.sim.machine import MachineState
 from feathersim.sim.world import ARM_REACH, ARM_REST, ROBOT_RADIUS, TIMESTEP, World
@@ -37,25 +37,18 @@ from feathersim.sim.world import ARM_REACH, ARM_REST, ROBOT_RADIUS, TIMESTEP, Wo
 # Arrival slack — kept strictly *tighter* than the SDK's `_at` "parked" tolerance (0.06 / 0.15) so a robot
 # the SM calls "arrived" reliably passes pick/place's precondition with boundary margin (rather than landing
 # exactly on the SDK threshold). The arm itself is inert (gravcomp + qvel-zeroed), so it adds no drift.
-_ARRIVE_POS, _ARRIVE_HEADING = 0.035, 0.08
-# Two bodies overlap if their centres are closer than the sum of radii.
-_BODY_CLEARANCE = 2.0 * ROBOT_RADIUS
+_ARRIVE_POS, _ARRIVE_HEADING = 0.05, 0.08
+_BODY_CLEARANCE = 2.0 * ROBOT_RADIUS   # two bodies overlap if centres are closer than the sum of radii (0.4)
 _WAYPOINT_TOL = 0.12          # advance to the next stored waypoint within this distance
-_REPLAN_INTERVAL = 0.2        # sim seconds between path replans (to react to robots that have moved)
-_ROBOT_MARGIN = 0.08          # extra half-extent when treating another robot as an obstacle (planned gap)
-_MIN_SEP = _BODY_CLEARANCE + 0.08   # = 0.48. Symmetric backstop: predicted next position must clear this.
-# Margin above the 0.04 minimum so two robots closing *simultaneously* (each predicts only its own step)
-# still clear bodies — matters most with 4 robots, where head-on encounters are common. NB only 0.02 m below
-# _SLOT_SPACING (0.50): robots converging on *adjacent* delivery slots can trip the backstop on final
-# approach; the deadlock breaker unwinds it, at the cost of an occasional slow seed (see LEARNINGS).
-_LOOKAHEAD = 0.08             # how far ahead (m) to predict the next position for the backstop
-_SLOT_SPACING = 0.5           # x spacing of per-robot delivery slots — just above _MIN_SEP (0.48), so two
-                              # robots at neighbouring slots clear bodies (tight; see the _MIN_SEP note)
-# Must cover the backstop's full reach (_MIN_SEP + _LOOKAHEAD) plus margin, so whenever the backstop would
-# block a robot near a higher-priority one, that robot yields rather than freezing just outside the zone.
-_YIELD_RADIUS = _MIN_SEP + _LOOKAHEAD + 0.05   # within this of a higher-priority robot, yield (back away)
-_YIELD_STEP = 0.10            # how far the yield maneuver aims, away from the higher-priority robot(s)
-_STUCK_TIME = 0.4             # sim seconds backstop-blocked before the deadlock breaker (yield) engages
+_SLOT_SPACING = 0.55          # x spacing of per-robot delivery slots — just past 2·_ORCA_RADIUS (0.54), so
+                              # two robots at adjacent slots are mutually reachable (tight: 0.01 m of slack;
+                              # if _ORCA_RADIUS grows, widen this too or adjacent slots become unreachable)
+# ORCA (robot↔robot avoidance). The avoidance disc is inflated past the true body radius so ORCA keeps
+# *centres* ≥ 2·_ORCA_RADIUS = 0.54 apart → bodies always clear the 0.40 contact threshold with margin.
+_ORCA_RADIUS = ROBOT_RADIUS + 0.07
+_ORCA_TAU = 2.0               # avoidance time horizon (s) — how far ahead ORCA looks
+_ORCA_BIAS = 0.06             # small fixed rotation (rad) of the preferred velocity; breaks perfectly
+                              # symmetric encounters that pure ORCA would stall on (and swirls clusters)
 
 
 def _table_slot(world: World, k: int) -> tuple[float, float, float]:
@@ -115,65 +108,22 @@ def _min_separation(world: World) -> float:
 
 
 def _plan_leg(world: World, k: int, goal_xy: tuple[float, float]) -> list[tuple[float, float]] | None:
-    """Plan robot ``k``'s path to ``goal_xy`` treating every *other* robot as an obstacle at its current
-    position (so robots route around each other, keeping ≥2·radius apart).
+    """Plan robot ``k``'s path to ``goal_xy`` around the **static** world only (machines, table, pillars).
 
-    If that fails — robots have boxed in the goal or the only corridor — fall back to a **static-only**
-    plan that ignores the movable robots. Treating robots as *soft* obstacles (preferred, not required)
-    is what prevents a planning deadly-embrace (two robots each blocking the other's goal → both stuck on
-    ``path=None`` forever, which the collision backstop never sees). Safety on the fallback path is still
-    hard-guaranteed per step by ``_would_collide`` + the priority-yield breaker."""
-    here = world.robot_pose(k)[:2]
-    half = ROBOT_RADIUS + _ROBOT_MARGIN
-    extras = [
-        Rect(*world.robot_pose(j)[:2], half, half) for j in range(world.n_robots) if j != k
-    ]
-    return (
-        plan_path(world.occupancy_grid(extra_obstacles=extras), here, goal_xy)
-        or plan_path(world.occupancy_grid(), here, goal_xy)
-    )
+    Other robots are deliberately *not* obstacles here — ORCA handles them reactively at velocity level. So
+    a path always exists (a robot is never left ``path=None`` because a peer parked on its route), which is
+    exactly what removes the planning deadly-embrace the old robot-as-obstacle planner could hit."""
+    return plan_path(world.occupancy_grid(), world.robot_pose(k)[:2], goal_xy)
 
 
-def _would_collide(world: World, k: int, target_xy: tuple[float, float]) -> bool:
-    """True if robot ``k``'s *predicted next position* (a short step toward ``target_xy``) would land
-    within ``_MIN_SEP`` of any other robot. Symmetric and direction-agnostic — it catches a robot
-    sliding tangentially past a neighbour, not just one driving head-on — so no robot, including the
-    top-priority one, can move into another's body.
-
-    It can't deadlock in the open: each robot's planned path routes *around* the others, so its predicted
-    step normally clears them; this only fires on the transient where a stale path aims too close, and
-    clears on the next replan."""
-    px, py = world.robot_pose(k)[:2]
-    dx, dy = target_xy[0] - px, target_xy[1] - py
-    dist = math.hypot(dx, dy)
-    if dist < 1e-9:
-        return False
-    step = min(_LOOKAHEAD, dist)
-    nxt = (px + dx / dist * step, py + dy / dist * step)
-    return any(
-        math.dist(nxt, world.robot_pose(j)[:2]) < _MIN_SEP
+def _orca_neighbors(ctrl: "FleetController", k: int) -> list[ORCAAgent]:
+    """Every other robot as an ORCA disc. A robot that is itself driving (running ORCA) is a *reciprocal*
+    peer (50/50 avoidance); a parked one is a non-reciprocal static obstacle the mover fully avoids."""
+    world = ctrl.world
+    return [
+        ORCAAgent(world.robot_pose(j)[:2], ctrl.vel[j], _ORCA_RADIUS, reciprocal=ctrl._driving(j))
         for j in range(world.n_robots) if j != k
-    )
-
-
-def _yield_target(world: World, k: int) -> tuple[float, float] | None:
-    """Deadlock breaker. If any *higher-priority* robot (lower id) is within ``_YIELD_RADIUS``, return a
-    point just *away* from those robots for ``k`` to back toward — else None. This breaks the symmetric
-    backstop's failure mode (a cluster of robots all freezing): priority is the strict id order, so the
-    lowest-id robot in any conflict never yields and always makes progress, and the cluster unwinds from
-    the top down. The yield itself is still safety-checked against every robot in :meth:`_drive`."""
-    px, py = world.robot_pose(k)[:2]
-    ax = ay = 0.0
-    for j in range(k):  # only robots with higher priority (strictly lower id)
-        jx, jy = world.robot_pose(j)[:2]
-        d = math.hypot(px - jx, py - jy)
-        if 1e-9 < d < _YIELD_RADIUS:
-            ax += (px - jx) / d
-            ay += (py - jy) / d
-    norm = math.hypot(ax, ay)
-    if norm < 1e-9:
-        return None
-    return (px + ax / norm * _YIELD_STEP, py + ay / norm * _YIELD_STEP)
+    ]
 
 
 class FleetController:
@@ -202,8 +152,7 @@ class FleetController:
         self.goal: list[tuple[float, float, float] | None] = [None] * n
         self.path: list[list[tuple[float, float]] | None] = [None] * n
         self.wp = [1] * n
-        self.replan_at = [0.0] * n
-        self.blocked_since: list[float | None] = [None] * n  # when the backstop first blocked robot k (deadlock timer)
+        self.vel: list[tuple[float, float]] = [(0.0, 0.0)] * n  # each robot's world-frame velocity (for ORCA)
         self.next_select = [0.0] * n
         self.last_readings: list[dict | None] = [None] * n  # per-robot last perception (for the dashboard)
         self.per_robot = {k: 0 for k in range(n)}
@@ -215,46 +164,50 @@ class FleetController:
     def delivered(self) -> int:
         return sum(self.per_robot.values())
 
+    def _driving(self, k: int) -> bool:
+        """True while robot ``k`` is in a transit phase (so it's actively running ORCA — a reciprocal peer)."""
+        return self.phase[k] in ("to_machine", "to_table")
+
     def _start_leg(self, k: int, goal_pose: tuple[float, float, float]) -> None:
-        self.goal[k], self.path[k], self.wp[k], self.replan_at[k] = goal_pose, None, 1, 0.0
+        self.goal[k], self.path[k], self.wp[k] = goal_pose, None, 1
 
     def _drive(self, k: int) -> None:
-        """One stored-path follower tick: (re)plan when stale, advance waypoints, stop on the contact
-        backstop if the next step would touch another robot. Drives via the (swappable) ``velocity_fn``."""
+        """One transit tick: follow the A* path's current waypoint as a *preferred* velocity, then let ORCA
+        make it collision-free against the other robots. The (swappable) ``velocity_fn`` — hand-coded or the
+        learned BC policy — still produces the preferred motion and the heading; ORCA only adjusts where the
+        robot actually goes to avoid peers. Drives the base through the mecanum IK→FK (load-bearing)."""
         world = self.world
         pose = world.robot_pose(k)
-        if self.path[k] is None or world.time >= self.replan_at[k]:
-            fresh = _plan_leg(world, k, self.goal[k][:2])
-            if fresh is not None:
-                self.path[k], self.wp[k] = fresh, 1
-            self.replan_at[k] = world.time + _REPLAN_INTERVAL
+        if self.path[k] is None:
+            self.path[k], self.wp[k] = _plan_leg(world, k, self.goal[k][:2]), 1
         if self.path[k] is None:
             world.stop_base(robot=k)
+            self.vel[k] = (0.0, 0.0)
             return
         pth = self.path[k]
         while self.wp[k] < len(pth) - 1 and math.dist(pose[:2], pth[self.wp[k]]) <= _WAYPOINT_TOL:
             self.wp[k] += 1
-        tgt = self.goal[k] if self.wp[k] >= len(pth) - 1 else (
-            *pth[self.wp[k]], math.atan2(pth[self.wp[k]][1] - pose[1], pth[self.wp[k]][0] - pose[0]))
-        if not _would_collide(world, k, tgt[:2]):
-            self.blocked_since[k] = None          # path is clear — drive the goal
-            self._command(k, pose, tgt)
-            return
-        # Backstop fired. Track how long we've been blocked; once it's a real deadlock (not a transient),
-        # the deadlock breaker kicks in: back away from any higher-priority robot to unwind the cluster.
-        if self.blocked_since[k] is None:
-            self.blocked_since[k] = world.time
-        if world.time - self.blocked_since[k] > _STUCK_TIME:
-            yld = _yield_target(world, k)
-            if yld is not None and not _would_collide(world, k, yld):
-                self._command(k, pose, (yld[0], yld[1], pose[2]))
-                return
-        world.stop_base(robot=k)
+        wx, wy = self.goal[k][:2] if self.wp[k] >= len(pth) - 1 else pth[self.wp[k]]
+        target = (wx, wy, self.goal[k][2])
 
-    def _command(self, k: int, pose, tgt) -> None:
-        vx, vy, omega = self.velocity_fn(pose, tgt, self.gains)
-        rvx, rvy, romega = wheels_to_body(body_to_wheels(vx, vy, omega, self.geom), self.geom)
-        self.world.command_base_velocity(rvx, rvy, romega, robot=k)
+        # Preferred body twist from the controller → preferred world velocity (with a symmetry-breaking bias).
+        vx_b, vy_b, omega = self.velocity_fn(pose, target, self.gains)
+        yaw = pose[2]
+        cy, sy = math.cos(yaw), math.sin(yaw)
+        pref_world = (cy * vx_b - sy * vy_b, sy * vx_b + cy * vy_b)
+        # Per-robot bias (distinct rotation per id), not a shared constant: a shared constant rotates a
+        # perfectly symmetric ring rigidly (it would orbit forever); distinct rotations break the ring.
+        bias = _ORCA_BIAS * (1.0 + 0.5 * k)
+        cb, sb = math.cos(bias), math.sin(bias)
+        pref_world = (pref_world[0] * cb - pref_world[1] * sb, pref_world[0] * sb + pref_world[1] * cb)
+
+        # ORCA → collision-free world velocity → back to a body twist (heading kept from the controller).
+        me = ORCAAgent(pose[:2], self.vel[k], _ORCA_RADIUS)
+        v = new_velocity(me, _orca_neighbors(self, k), pref_world, self.gains.max_linear, _ORCA_TAU, TIMESTEP)
+        self.vel[k] = v
+        bvx, bvy = cy * v[0] + sy * v[1], -sy * v[0] + cy * v[1]
+        rvx, rvy, romega = wheels_to_body(body_to_wheels(bvx, bvy, omega, self.geom), self.geom)
+        world.command_base_velocity(rvx, rvy, romega, robot=k)
 
     def _advance(self, k: int) -> None:
         world, robot = self.world, self.robots[k]
@@ -321,6 +274,9 @@ class FleetController:
         """Advance every robot one tick, step the world once, and update the closest-approach metric."""
         for k in range(self.world.n_robots):
             self._advance(k)
+        for k in range(self.world.n_robots):     # a parked robot is a stationary ORCA obstacle (vel 0)
+            if not self._driving(k):
+                self.vel[k] = (0.0, 0.0)
         self.world.step()
         self.min_sep = min(self.min_sep, _min_separation(self.world))
 

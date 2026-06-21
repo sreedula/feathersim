@@ -195,6 +195,24 @@ MuJoCo's default offscreen framebuffer is 640×480, so any `mujoco.Renderer(mode
 errors with a message pointing at `<global offheight>`. Set the global once (≥ the largest renderer) and
 all renderers (32/64/560) share it. Cheap (~one 1280² buffer per GL context).
 
+## 2026-06-20 — ORCA replaces the priority-yield heuristic; A* static-only + reactive velocity (v5)
+Swapped the symmetric-backstop + priority-yield deadlock-breaker for **ORCA** (reciprocal velocity
+obstacles, RVO2 port). The clean architecture: **A* plans against the static world only** (machines/table/
+pillars), and **ORCA makes the per-tick velocity collision-free against the other robots**. This removed
+*both* prior failure modes at once — the planning deadly-embrace (planning no longer sees robots, so a path
+always exists) and the cluster deadlock (ORCA is smooth + reciprocal). Result vs the heuristic: no slow
+near-wedge seeds (max ~34 s vs ~90 s outliers), every config completes including the pillar config that
+used to wedge, collision-free at 0.45 m across 12-seed sweeps, 23/min steady over a 600 s real-perception
+run. Gotchas: (1) pure ORCA **stalls on perfectly symmetric/collinear encounters** (it slows to a stop with
+no lateral tie-break) — fix is a small symmetry-breaking rotation of the *preferred* velocity; use a
+**per-robot** bias, not a shared constant (a shared constant rotates a symmetric ring rigidly → it orbits
+forever; distinct per-robot rotations break the ring). The fleet also sidesteps this by giving robots
+*distinct* goals (per-robot table slots, distinct machines) — never a shared point. (2) Inflate the ORCA
+disc past the true body radius (`ROBOT_RADIUS+0.07` → combined 0.54) so the 0.40 contact threshold keeps a
+real margin even with the 3D-LP fallback and one-tick-stale neighbour velocities. (3) Parked robots must be
+fed to ORCA as **non-reciprocal** obstacles (full avoidance responsibility on the mover) with velocity 0,
+or a mover only takes its 50% share of avoiding something that won't move.
+
 ## 2026-06-20 — Decor behind the machines lands in the perception crop; retrain, don't hide (v4)
 Adding the factory environment, the yellow floor safety-stripe (and walls) showed up in the *background*
 of the machine close-up the CNN reads — the crops were no longer byte-identical (max pixel diff 162). Two

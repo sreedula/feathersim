@@ -10,9 +10,9 @@ controller, and a browser **command center**. Pure simulation — no real hardwa
 
 *Four robots — each with a **3-DOF articulated arm + gripper** — tend four machines on a **factory floor**,
 unattended and collision-free (status-light dome = machine state). Each perceives from its own camera, a
-fleet manager assigns work without double-booking, A\* plans each path, a **priority-yield deadlock breaker**
-keeps the busy floor live, and the arms **reach into a machine, grasp a part, and stack it on the output
-table**. The command center streams this **live cinematic 3D view**, each robot's **onboard camera**, a
+fleet manager assigns work without double-booking, A\* plans each path, **ORCA** reciprocal collision
+avoidance keeps the busy floor collision-free *and* deadlock-free, and the arms **reach into a machine,
+grasp a part, and stack it on the output table**. The command center streams this **live cinematic 3D view**, each robot's **onboard camera**, a
 **perception HUD** (what the model sees & infers), and a tactical top-down with paths overlaid — with a
 hand-coded↔learned controller toggle and a perception-difficulty slider — at `make dashboard`.*
 
@@ -20,7 +20,7 @@ hand-coded↔learned controller toggle and a perception-difficulty slider — at
 
 ```bash
 make install     # pip install -r requirements.txt  (Python 3.11+)
-make test        # pytest — 177 tests
+make test        # pytest — 183 tests
 make demo        # headless single-robot autonomy loop (routes around obstacles)
 make fleet       # headless 4-robot fleet, compares scheduling strategies, collision-free
 make dashboard   # the command center at http://localhost:8000  (3D feed + onboard cams + paths + toggle + slider)
@@ -42,7 +42,7 @@ A walking skeleton built in vertical slices — runnable and demoable at every p
 | **Perception** | `feathersim/perception/` | Renders per-machine crops, **auto-labels** from ground-truth configs, trains a 2-head CNN. The deployed model trains on a **clean+randomized mix**: **1.0 clean *and* 0.94 under domain randomization** (+23 pts over a clean-only model's 0.71; 0.37 baseline). |
 | **Planning** | `feathersim/planning/` | Occupancy grid + 8-connected **A\*** + line-of-sight smoothing + a waypoint follower. Routes around obstacles. |
 | **Autonomy** | `feathersim/autonomy/` | The single-robot loop: perceive → tend the longest-waiting perceived-`done` machine → repeat. Selects on **perception, never ground truth**. |
-| **Fleet** | `feathersim/fleet/` | Multi-robot tick engine (up to 4): task allocation (no double-booking), **symmetric collision avoidance** + a **priority-yield deadlock breaker**, pluggable scheduling. |
+| **Fleet** | `feathersim/fleet/` | Multi-robot tick engine (up to 4): task allocation (no double-booking), A\* (static) + **ORCA** reciprocal collision avoidance (collision-free *and* deadlock-free), pluggable scheduling. |
 | **Policy** | `feathersim/policy/` | **Behavior-cloned** go-to-pose controller; a tiny MLP drop-in for the P-controller — runs the whole loop at 112% of the expert's throughput. |
 | **Dashboard** | `feathersim/dashboard/` | FastAPI + single-file vanilla JS: the multi-robot **command center** (live cinematic 3D feed, per-robot onboard cameras, tactical top-down) and the single-robot **WASD-teleop** dashboard. |
 
@@ -102,6 +102,19 @@ Five specialist subagents (`world-artist`, `manipulation-engineer`, `perception-
 `frontend-designer`, `render-qa`) in [`.claude/agents/`](.claude/agents) support this arc — `render-qa`
 visually inspects every change, `reviewer` audits every diff.
 
+## v5 — ORCA coordination + mission control
+
+- **ORCA reciprocal collision avoidance** ([`feathersim/fleet/orca.py`](feathersim/fleet/orca.py), a faithful
+  RVO2 port) replaces the old priority-yield heuristic. **A\*** plans each leg around the *static* world;
+  **ORCA** makes the per-tick velocity collision-free against the other robots — smooth, reciprocal, and
+  **deadlock-free**. Because planning no longer treats robots as obstacles, the planning deadly-embrace is
+  gone too. Every config (incl. the tight pillar cell that used to wedge) completes collision-free at 0.45 m
+  across 12-seed sweeps in ~30 s — no slow near-wedge seeds — and runs 23/min steady over a 600 s
+  real-perception session. Unit-tested on the classic scenarios (head-on, crossing, antipodal circle, overlap
+  recovery, static-obstacle).
+- **Live mission log + UI overhaul.** The command center narrates deliveries in real time and got a
+  mission-control visual pass (`frontend-designer`).
+
 ## How the loop closes
 
 ```
@@ -125,7 +138,7 @@ Every phase ran the same loop: smallest vertical slice → `test-runner` (nothin
 independent `reviewer` (address CRITICAL/HIGH before commit) → log `DECISIONS`/`LEARNINGS` → commit. The
 reviewer caught bugs a green suite hid — a robot body silently clipping a pillar (planning protects the
 *center*, the follower bows), a collision guarantee that held only on the lucky seed 0, and a 4-robot
-deadlock the bare backstop masked. All are written up in [`LEARNINGS.md`](LEARNINGS.md). **177 tests**;
+deadlock the bare backstop masked. All are written up in [`LEARNINGS.md`](LEARNINGS.md). **183 tests**;
 rendering-dependent tests skip without a GL backend (`MUJOCO_GL=egl`/`osmesa` to run them in CI).
 
 ## Docs

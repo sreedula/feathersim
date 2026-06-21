@@ -2,6 +2,26 @@
 
 Architecture decision log. Each entry: date, decision, why, tradeoff.
 
+## 2026-06-20 — v5: ORCA for fleet coordination (replacing the priority-yield heuristic)
+**Decision:** Replace the symmetric contact-backstop + priority-yield deadlock-breaker with **ORCA**
+(Optimal Reciprocal Collision Avoidance — a faithful RVO2 port in `feathersim/fleet/orca.py`). Architecture:
+**A\* plans each leg against the static world only** (machines/table/pillars), and **ORCA computes a
+collision-free velocity against the other robots** every tick. The swappable controller (hand-coded or
+learned BC policy) still produces the *preferred* velocity + heading; ORCA only adjusts translation to
+avoid peers. Parked robots are fed to ORCA as non-reciprocal (full-responsibility) obstacles; a small
+*per-robot* preferred-velocity rotation breaks perfectly symmetric stalls.
+**Why:** The heuristic was verified collision-free but had two real weaknesses — a rare ~90 s near-wedge,
+and a tight cell (pillars) that could fail to complete. ORCA is the principled fix: it's smooth, reciprocal,
+and deadlock-free, and because planning no longer treats robots as obstacles, the planning deadly-embrace is
+structurally gone too. Measured win across 12-seed sweeps: every config (4×4, 3×3, 3×2, 2×2, *and* the
+pillar config) completes, collision-free at 0.45 m, max ~34 s (vs ~90 s outliers); 23/min steady over a
+600 s real-perception run.
+**Tradeoff:** ORCA needs a symmetry-breaker (pure ORCA stalls on exact symmetry) and a disc inflated past
+the body radius (combined 0.54 vs the 0.40 contact threshold) for a hard margin under the 3D-LP fallback +
+one-tick-stale neighbour velocities. A *perfectly* symmetric shared-goal ring is a known ORCA livelock the
+fleet sidesteps by giving robots distinct goals (logged in LEARNINGS). More code than the heuristic, but
+it's a standard, well-understood algorithm with a faithful, unit-tested port.
+
 ## 2026-06-20 — v4 iter 3: perception HUD shows the *deployed* model's belief on the *faithful* crop
 **Decision:** A "what the robot sees AND thinks" panel: for each machine, the exact DR-corrupted crop the
 **robust deployed** model received (not the clean baseline, not a re-render), beside its inferred state,

@@ -436,3 +436,14 @@ machine j", flashing on new arrivals) and a full visual polish pass — sticky b
 pulse, a hero-feed glow ring, a two-up feeds row (perception HUD + tactical), glanceable fleet stat boxes,
 robot-colored rows. Single-file vanilla JS/CSS, all four feeds + controls preserved. Verified live (page
 200, mission log populating, controller toggle responds). 177 green.
+
+## v5 — ORCA coordination  `[x]`
+
+**Done:** replaced the priority-yield deadlock-breaker heuristic with **ORCA** (reciprocal velocity
+obstacles, faithful RVO2 port in `feathersim/fleet/orca.py`, unit-tested: head-on / crossing / antipodal
+circle / overlap-recovery / static-obstacle). A* now plans static-only; ORCA handles robot↔robot reactively
+— removing *both* the cluster deadlock and the planning deadly-embrace. Per-robot symmetry-breaking bias;
+parked robots are non-reciprocal obstacles; disc inflated for a hard 0.14 m margin. Every config (incl. the
+pillar cell that used to wedge) completes collision-free at 0.45 m across 12-seed sweeps, max ~34 s (vs the
+heuristic's ~90 s outliers); 23/min steady over a 600 s real-perception run. Reviewer SHIP (port verified
+formula-by-formula; collision-freedom a real margin, not luck). 183 green.
