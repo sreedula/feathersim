@@ -60,8 +60,9 @@ def test_telemetry_has_command_center_fields(manager):
     t = manager._build_telemetry()
     assert set(t) >= {
         "sim_time", "delivered", "throughput_per_min", "controller", "difficulty",
-        "perception_accuracy", "clean_accuracy", "robots", "machines",
+        "perception_accuracy", "clean_accuracy", "robots", "machines", "recent_events",
     }
+    assert isinstance(t["recent_events"], list)
     assert len(t["robots"]) == 3 and len(t["machines"]) == manager.world.n_machines
     assert set(t["machines"][0]) >= {"name", "state", "parts_done", "assigned_to", "perceived_by"}
     assert set(t["robots"][0]) >= {"id", "color", "phase", "target", "pose"}

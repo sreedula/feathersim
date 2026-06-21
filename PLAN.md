@@ -427,3 +427,12 @@ render-qa) support the loop. Every iteration: build → render-QA → test-runne
       a lower eye-level cinematic overview framing (dist 7.0 / elev -23° / az 92°); more metallic reflective
       arms + robots; richer skybox. All perception-safe — machine close-up crops verified **byte-identical**
       (max diff 0), so no retrain. 177 green; hero GIF regenerated.
+
+## Iter 5 — Live mission log + command-center UI overhaul  `[x]`
+
+**Done:** the fleet's delivery `events` are surfaced in telemetry (`recent_events`, newest-first); the
+`frontend-designer` subagent added a live **Mission log** panel (robot-colored "robot k delivered from
+machine j", flashing on new arrivals) and a full visual polish pass — sticky branded header with a live
+pulse, a hero-feed glow ring, a two-up feeds row (perception HUD + tactical), glanceable fleet stat boxes,
+robot-colored rows. Single-file vanilla JS/CSS, all four feeds + controls preserved. Verified live (page
+200, mission log populating, controller toggle responds). 177 green.

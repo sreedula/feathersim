@@ -6,112 +6,406 @@
 <title>FeatherSim — Command Center</title>
 <style>
   :root {
-    --bg:#0e1117; --panel:#161b22; --line:#283039; --text:#e6edf3; --muted:#8b949e; --accent:#4493f8;
-    --idle:#8c8c93; --running:#f0a020; --done:#2ecc55; --warn:#f85149;
+    --bg:#0a0d12; --panel:#10151c; --panel-hi:#141a23; --line:#1e2733; --text:#dde4ed;
+    --muted:#6b7685; --accent:#4493f8; --accent-dim:#1e3a5f;
+    --idle:#6b7280; --running:#f59e0b; --done:#22c55e; --warn:#ef4444;
+    --radius:10px; --gap:16px;
   }
-  *{box-sizing:border-box}
-  body{margin:0;font:14px/1.5 -apple-system,system-ui,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
-  header{padding:13px 22px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:12px}
-  header h1{font-size:17px;margin:0}
-  header .sub{color:var(--muted);font-size:12px}
-  .wrap{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:18px;padding:18px 22px;align-items:start}
-  @media (max-width:900px){.wrap{grid-template-columns:1fr}}
-  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:16px}
-  .panel h2{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin:0 0 10px;font-weight:600}
-  #feed3d,#schematic{width:100%;border-radius:8px;display:block;background:#000;aspect-ratio:1/1}
-  .legend{display:flex;gap:14px;margin-top:8px;font-size:12px;color:var(--muted);flex-wrap:wrap}
-  .dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:5px;vertical-align:middle}
-  .stat{display:flex;justify-content:space-between;border-bottom:1px dashed var(--line);padding:3px 0}
-  .stat b{color:var(--muted);font-weight:500}
-  .toggle{display:flex;gap:8px;margin-bottom:6px}
-  .toggle button{flex:1;font:inherit;font-weight:600;cursor:pointer;border-radius:8px;padding:8px;border:1px solid var(--line);background:#21262d;color:var(--text)}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font:13px/1.55 -apple-system,system-ui,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+
+  /* ── header ─────────────────────────────────────────────────── */
+  header {
+    padding:11px 20px;
+    border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:16px;
+    background:rgba(10,13,18,.96);
+    position:sticky;top:0;z-index:10;
+    backdrop-filter:blur(6px);
+  }
+  header .logo {
+    display:flex;align-items:center;gap:9px;
+  }
+  header .logo-mark {
+    width:28px;height:28px;border-radius:7px;
+    background:linear-gradient(135deg,var(--accent) 0%,#1a6bd4 100%);
+    display:flex;align-items:center;justify-content:center;
+    font-size:14px;font-weight:700;color:#fff;letter-spacing:-.5px;
+    flex-shrink:0;
+  }
+  header h1 {
+    font-size:15px;font-weight:700;letter-spacing:-.2px;color:var(--text);
+  }
+  header .sub {
+    color:var(--muted);font-size:11px;border-left:1px solid var(--line);
+    padding-left:14px;
+  }
+  .header-right {
+    margin-left:auto;display:flex;align-items:center;gap:10px;
+  }
+  .status-pill {
+    display:flex;align-items:center;gap:5px;
+    font-size:11px;color:var(--muted);
+    background:var(--panel);border:1px solid var(--line);
+    border-radius:999px;padding:3px 10px;
+  }
+  .status-pill .pulse {
+    width:7px;height:7px;border-radius:50%;
+    background:var(--done);
+    box-shadow:0 0 0 0 var(--done);
+    animation:pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%{box-shadow:0 0 0 0 rgba(34,197,94,.5)}
+    70%{box-shadow:0 0 0 6px rgba(34,197,94,0)}
+    100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}
+  }
+
+  /* ── main grid ───────────────────────────────────────────────── */
+  .wrap {
+    display:grid;
+    grid-template-columns:minmax(0,1fr) 320px;
+    gap:var(--gap);
+    padding:var(--gap) 20px 24px;
+    align-items:start;
+  }
+  @media (max-width:900px){
+    .wrap{grid-template-columns:1fr}
+    .sidebar{order:2}
+  }
+
+  /* ── panels ──────────────────────────────────────────────────── */
+  .panel {
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:13px 15px;
+    margin-bottom:var(--gap);
+  }
+  .panel:last-child{margin-bottom:0}
+  .panel-head {
+    display:flex;align-items:center;justify-content:space-between;
+    margin-bottom:10px;
+  }
+  .panel h2 {
+    font-size:10px;text-transform:uppercase;letter-spacing:1px;
+    color:var(--muted);font-weight:600;
+  }
+  .panel-badge {
+    font-size:10px;padding:1px 7px;border-radius:999px;
+    border:1px solid var(--line);color:var(--muted);
+    background:rgba(255,255,255,.03);
+  }
+
+  /* ── hero feed ───────────────────────────────────────────────── */
+  .hero-panel {
+    background:var(--panel);border:1px solid var(--line);
+    border-radius:var(--radius);padding:13px 15px;margin-bottom:var(--gap);
+    position:relative;
+  }
+  .hero-panel::before {
+    content:"";position:absolute;inset:0;border-radius:var(--radius);
+    box-shadow:0 0 0 1px var(--accent-dim);
+    pointer-events:none;opacity:.6;
+  }
+  #feed3d {
+    width:100%;border-radius:7px;display:block;
+    background:#000;aspect-ratio:1/1;
+    border:1px solid var(--line);
+  }
+
+  /* ── supporting feeds ────────────────────────────────────────── */
+  .feeds-row {
+    display:grid;grid-template-columns:1fr 1fr;gap:var(--gap);margin-bottom:var(--gap);
+  }
+  @media (max-width:900px){.feeds-row{grid-template-columns:1fr}}
+  .feed-panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:13px 15px}
+  .feed-panel img {
+    width:100%;border-radius:7px;display:block;
+    background:#000;border:1px solid var(--line);
+  }
+  #schematic{aspect-ratio:1/1}
+  #perception{aspect-ratio:auto}
+  #robotcams{aspect-ratio:4/1}
+
+  /* ── legend ──────────────────────────────────────────────────── */
+  .legend {
+    display:flex;gap:12px;margin-top:9px;font-size:11px;color:var(--muted);flex-wrap:wrap;
+    align-items:center;
+  }
+  .legend-item{display:flex;align-items:center;gap:5px}
+  .dot {
+    width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0;
+  }
+
+  /* ── hint text ───────────────────────────────────────────────── */
+  .hint {
+    color:var(--muted);font-size:11px;margin-top:7px;line-height:1.5;
+  }
+
+  /* ── stat rows ───────────────────────────────────────────────── */
+  .stat {
+    display:flex;justify-content:space-between;align-items:center;
+    padding:5px 0;border-bottom:1px solid var(--line);
+    font-size:12px;
+  }
+  .stat:last-of-type{border-bottom:none}
+  .stat b {color:var(--muted);font-weight:500}
+  .stat .val {color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
+
+  /* ── controller toggle ───────────────────────────────────────── */
+  .toggle {display:flex;gap:6px;margin-bottom:8px}
+  .toggle button {
+    flex:1;font:inherit;font-size:12px;font-weight:600;cursor:pointer;
+    border-radius:7px;padding:7px 8px;border:1px solid var(--line);
+    background:rgba(255,255,255,.04);color:var(--muted);
+    transition:background .15s,color .15s,border-color .15s;
+  }
+  .toggle button:hover{background:rgba(255,255,255,.07);color:var(--text)}
   .toggle button.on{background:var(--accent);border-color:var(--accent);color:#fff}
-  input[type=range]{width:100%}
-  .accbar{height:8px;border-radius:4px;background:#21262d;overflow:hidden;margin-top:6px}
-  .accbar > div{height:100%;background:linear-gradient(90deg,var(--warn),var(--running),var(--done))}
-  .row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
+
+  /* ── difficulty slider ───────────────────────────────────────── */
+  input[type=range]{
+    width:100%;accent-color:var(--accent);cursor:pointer;
+    margin:4px 0 8px;
+  }
+  .accbar {
+    height:5px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:5px;
+  }
+  .accbar > div {
+    height:100%;background:linear-gradient(90deg,var(--warn),var(--running),var(--done));
+    transition:width .3s ease;
+  }
+  .acc-row {
+    display:flex;justify-content:space-between;align-items:center;
+    padding:5px 0 2px;font-size:11px;
+  }
+  .acc-row b{color:var(--muted);font-weight:500}
+  .acc-row .val{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
+
+  /* ── fleet summary stats ─────────────────────────────────────── */
+  .fleet-stats {
+    display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px;
+  }
+  .fleet-stat-box {
+    background:var(--panel-hi);border:1px solid var(--line);
+    border-radius:7px;padding:8px 10px;
+  }
+  .fleet-stat-box .label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+  .fleet-stat-box .value{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2;margin-top:2px}
+
+  /* ── machine / robot rows ────────────────────────────────────── */
+  .row {
+    display:flex;justify-content:space-between;align-items:center;
+    padding:6px 0;border-bottom:1px solid var(--line);font-size:12px;
+  }
   .row:last-child{border-bottom:none}
-  .pill{font-size:11px;padding:1px 7px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
-  .badges{display:flex;gap:4px}
-  .badge{font-size:10px;padding:1px 5px;border-radius:4px;border:1px solid var(--line)}
+  .row-left{display:flex;align-items:center;gap:7px;min-width:0}
+  .name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pill {
+    font-size:10px;padding:1px 6px;border-radius:999px;
+    border:1px solid var(--line);color:var(--muted);
+    background:rgba(255,255,255,.03);white-space:nowrap;flex-shrink:0;
+  }
+  .badges{display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end}
+  .badge{
+    font-size:10px;padding:1px 5px;border-radius:4px;
+    border:1px solid var(--line);white-space:nowrap;
+  }
   .badge.bad{border-color:var(--warn);color:var(--warn)}
-  .name{font-weight:600}
-  .hint{color:var(--muted);font-size:11px;margin-top:4px}
+
+  /* ── mission log ─────────────────────────────────────────────── */
+  .log-feed {
+    display:flex;flex-direction:column;gap:5px;
+    max-height:220px;overflow-y:auto;
+    scrollbar-width:thin;scrollbar-color:var(--line) transparent;
+  }
+  .log-feed::-webkit-scrollbar{width:4px}
+  .log-feed::-webkit-scrollbar-thumb{background:var(--line);border-radius:2px}
+  .log-entry {
+    display:flex;align-items:baseline;gap:7px;
+    font-size:11px;padding:5px 8px;
+    background:var(--panel-hi);border:1px solid var(--line);
+    border-radius:6px;line-height:1.4;
+  }
+  .log-entry.log-new {
+    animation:log-flash .6s ease-out forwards;
+  }
+  @keyframes log-flash {
+    0%{background:rgba(68,147,248,.12);border-color:rgba(68,147,248,.3)}
+    100%{background:var(--panel-hi);border-color:var(--line)}
+  }
+  .log-time {
+    color:var(--muted);font-variant-numeric:tabular-nums;
+    white-space:nowrap;flex-shrink:0;
+  }
+  .log-robot {
+    font-weight:700;white-space:nowrap;flex-shrink:0;
+  }
+  .log-detail {color:var(--muted);min-width:0}
+  .log-empty {
+    font-size:11px;color:var(--muted);
+    padding:12px 8px;text-align:center;
+    font-style:italic;
+  }
+
+  /* ── machines full-width panel ───────────────────────────────── */
+  .machines-panel {
+    background:var(--panel);border:1px solid var(--line);
+    border-radius:var(--radius);padding:13px 15px;margin-bottom:var(--gap);
+  }
 </style>
 </head>
 <body>
+
 <header>
-  <h1>FeatherSim — Command Center</h1>
-  <span class="sub">multi-robot fleet · planned paths · per-robot perception · live scheduling</span>
+  <div class="logo">
+    <div class="logo-mark">F</div>
+    <h1>FeatherSim Command Center</h1>
+  </div>
+  <span class="sub">multi-robot fleet &middot; live scheduling &middot; perception oversight</span>
+  <div class="header-right">
+    <div class="status-pill"><span class="pulse"></span>live</div>
+  </div>
 </header>
 
 <div class="wrap">
+
+  <!-- ── left column: feeds + machines ─────────────────────────── -->
   <div>
-    <div class="panel">
-      <h2>Live — 3D cell</h2>
-      <img id="feed3d" src="/api/camera3d" alt="3D cell feed" onerror="this.style.opacity=.3" />
+
+    <!-- hero 3D feed -->
+    <div class="hero-panel">
+      <div class="panel-head">
+        <h2>Live &mdash; 3D cell overview</h2>
+        <span class="panel-badge">MJPEG</span>
+      </div>
+      <img id="feed3d" src="/api/camera3d" alt="3D cell feed" onerror="this.style.opacity=.25" />
       <div class="legend">
-        <span><span class="dot" style="background:var(--idle)"></span>idle</span>
-        <span><span class="dot" style="background:var(--running)"></span>running</span>
-        <span><span class="dot" style="background:var(--done)"></span>done</span>
-        <span>status-light dome = machine state · parts on the bed</span>
+        <div class="legend-item"><span class="dot" style="background:var(--idle)"></span>idle</div>
+        <div class="legend-item"><span class="dot" style="background:var(--running)"></span>running</div>
+        <div class="legend-item"><span class="dot" style="background:var(--done)"></span>done / ready</div>
+        <span style="color:var(--muted);font-size:11px">dome light = true machine state</span>
       </div>
     </div>
-    <div class="panel">
-      <h2>Onboard cameras — each robot's eye view</h2>
-      <img id="robotcams" src="/api/robotcams" alt="robot onboard cameras" onerror="this.style.opacity=.3"
-           style="width:100%;border-radius:8px;display:block;background:#000;aspect-ratio:3/1" />
+
+    <!-- onboard cameras — full width -->
+    <div class="feed-panel" style="margin-bottom:var(--gap)">
+      <div class="panel-head">
+        <h2>Onboard cameras &mdash; each robot&rsquo;s eye view</h2>
+        <span class="panel-badge">MJPEG</span>
+      </div>
+      <img id="robotcams" src="/api/robotcams" alt="robot onboard cameras"
+           style="aspect-ratio:4/1" onerror="this.style.opacity=.25" />
     </div>
-    <div class="panel">
-      <h2>Perception — what the model sees &amp; thinks</h2>
-      <img id="perception" src="/api/perception" alt="perception HUD" onerror="this.style.opacity=.3"
-           style="width:100%;border-radius:8px;display:block;background:#000" />
-      <div class="hint">The exact domain-randomized crop the deployed model received for each machine, its
-        inferred state + confidence, and whether it matches ground truth. Raise difficulty → the crops
-        degrade and wrong / low-confidence reads appear.</div>
+
+    <!-- perception HUD + tactical map side by side -->
+    <div class="feeds-row">
+      <div class="feed-panel">
+        <div class="panel-head">
+          <h2>Perception HUD</h2>
+          <span class="panel-badge">MJPEG</span>
+        </div>
+        <img id="perception" src="/api/perception" alt="perception HUD" onerror="this.style.opacity=.25" />
+        <div class="hint">DR-corrupted crop the model received, its inferred state + confidence, and
+          agreement with ground truth. Raise difficulty &rarr; wrong / low-confidence reads appear.</div>
+      </div>
+      <div class="feed-panel">
+        <div class="panel-head">
+          <h2>Tactical &mdash; top-down</h2>
+          <span class="panel-badge">MJPEG</span>
+        </div>
+        <img id="schematic" src="/api/camera" alt="fleet schematic" onerror="this.style.opacity=.25" />
+      </div>
     </div>
-    <div class="panel">
-      <h2>Tactical — top-down (planned paths overlaid)</h2>
-      <img id="schematic" src="/api/camera" alt="fleet schematic" onerror="this.style.opacity=.3" />
-    </div>
-    <div class="panel">
-      <h2>Machines — true vs. perceived</h2>
+
+    <!-- machines true vs. perceived -->
+    <div class="machines-panel">
+      <div class="panel-head">
+        <h2>Machines &mdash; true vs. perceived</h2>
+      </div>
       <div id="machines"></div>
     </div>
+
   </div>
 
-  <div>
+  <!-- ── right sidebar: controls + fleet telemetry + mission log ── -->
+  <div class="sidebar">
+
+    <!-- controller toggle -->
     <div class="panel">
-      <h2>Controller</h2>
+      <div class="panel-head"><h2>Controller</h2></div>
       <div class="toggle">
         <button id="ctl-rule" onclick="setController('rule')">Hand-coded</button>
         <button id="ctl-learned" onclick="setController('learned')">Learned policy</button>
       </div>
-      <div class="hint">Swaps the drive controller for every robot, live.</div>
+      <div class="hint">Swaps the drive controller live across all robots.</div>
     </div>
+
+    <!-- perception difficulty slider -->
     <div class="panel">
-      <h2>Perception difficulty</h2>
-      <input id="diff" type="range" min="0" max="1" step="0.05" value="0.4" oninput="setDifficulty(this.value)" />
-      <div class="stat"><b>Domain randomization</b> <span id="diffval">0.40</span></div>
-      <div class="stat" style="border:none;padding-bottom:2px"><b>Robust model (deployed)</b> <span id="accval">—</span></div>
+      <div class="panel-head"><h2>Perception difficulty</h2></div>
+      <input id="diff" type="range" min="0" max="1" step="0.05" value="0.4"
+             oninput="setDifficulty(this.value)" />
+      <div class="acc-row">
+        <b>Domain randomization</b>
+        <span class="val" id="diffval">0.40</span>
+      </div>
+      <div class="acc-row" style="padding-top:8px">
+        <b>Robust model</b>
+        <span class="val" id="accval">&mdash;</span>
+      </div>
       <div class="accbar"><div id="accbar" style="width:0%"></div></div>
-      <div class="stat" style="border:none;padding:6px 0 2px"><b>Clean model (baseline)</b> <span id="cleanval">—</span></div>
+      <div class="acc-row" style="padding-top:6px">
+        <b>Clean baseline</b>
+        <span class="val" id="cleanval">&mdash;</span>
+      </div>
       <div class="accbar"><div id="cleanbar" style="width:0%"></div></div>
-      <div class="hint">Drag up → harder renders. The clean baseline crumbles; the DR-trained model holds.</div>
+      <div class="hint" style="margin-top:8px">Drag up &rarr; harder renders. The clean baseline crumbles;
+        the DR-trained model holds.</div>
     </div>
+
+    <!-- fleet summary -->
     <div class="panel">
-      <h2>Fleet</h2>
-      <div class="stat"><b>Uptime</b> <span id="uptime">0s</span></div>
-      <div class="stat"><b>Delivered</b> <span id="delivered">0</span></div>
-      <div class="stat"><b>Throughput</b> <span id="throughput">0/min</span></div>
-      <div class="stat"><b>Closest approach</b> <span id="sep">—</span></div>
-      <div id="robots" style="margin-top:8px"></div>
+      <div class="panel-head"><h2>Fleet summary</h2></div>
+      <div class="fleet-stats">
+        <div class="fleet-stat-box">
+          <div class="label">Delivered</div>
+          <div class="value" id="delivered">0</div>
+        </div>
+        <div class="fleet-stat-box">
+          <div class="label">Throughput</div>
+          <div class="value" id="throughput" style="font-size:14px;padding-top:4px">0/min</div>
+        </div>
+      </div>
+      <div class="stat" style="padding-top:8px">
+        <b>Uptime</b><span class="val" id="uptime">0s</span>
+      </div>
+      <div class="stat">
+        <b>Closest approach</b><span class="val" id="sep">&mdash;</span>
+      </div>
+      <div id="robots" style="margin-top:6px"></div>
     </div>
-  </div>
-</div>
+
+    <!-- mission log -->
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Mission log</h2>
+        <span class="panel-badge" id="log-count">0 deliveries</span>
+      </div>
+      <div class="log-feed" id="mission-log">
+        <div class="log-empty" id="log-empty">awaiting first delivery&hellip;</div>
+      </div>
+    </div>
+
+  </div><!-- /sidebar -->
+
+</div><!-- /wrap -->
 
 <script>
 const STATE_COLOR = {idle:"var(--idle)", running:"var(--running)", done:"var(--done)"};
+
+// ── preserved API functions (contract) ──────────────────────────
 
 async function post(url, body){
   try{ await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); }catch(e){}
@@ -123,46 +417,109 @@ function setDifficulty(v){
   clearTimeout(diffTimer); diffTimer=setTimeout(()=>post("/api/difficulty",{value:+v}),120);
 }
 
+// ── render helpers ───────────────────────────────────────────────
+
 function renderMachines(machines, robots){
   const colorOf = id => (robots.find(r=>r.id===id)||{}).color || "var(--muted)";
   document.getElementById("machines").innerHTML = machines.map(m=>{
     const tc = STATE_COLOR[m.state]||"var(--muted)";
-    const assigned = m.assigned_to==null ? "" : `<span class="pill" style="color:${colorOf(m.assigned_to)}">robot ${m.assigned_to}</span>`;
+    const assigned = m.assigned_to==null ? "" :
+      `<span class="pill" style="color:${colorOf(m.assigned_to)}">robot&nbsp;${m.assigned_to}</span>`;
     const badges = Object.entries(m.perceived_by||{}).map(([rid,st])=>{
       const bad = st!==m.state ? " bad" : "";
       return `<span class="badge${bad}" style="color:${STATE_COLOR[st]||'var(--muted)'}">r${rid}:${st}</span>`;
     }).join("");
     return `<div class="row">
-      <span><span class="dot" style="background:${tc}"></span><span class="name">${m.name}</span>
-        <span class="pill">${m.parts_done} done</span> ${assigned}</span>
-      <span class="badges">${badges}</span></div>`;
+      <span class="row-left">
+        <span class="dot" style="background:${tc}"></span>
+        <span class="name">${m.name}</span>
+        <span class="pill">${m.parts_done}&nbsp;done</span>
+        ${assigned}
+      </span>
+      <span class="badges">${badges}</span>
+    </div>`;
   }).join("");
 }
 
 function renderRobots(robots){
   document.getElementById("robots").innerHTML = robots.map(r=>{
-    const t = r.target ? `→ ${r.target}` : "";
-    return `<div class="row"><span><span class="dot" style="background:${r.color}"></span>robot ${r.id}</span>
-      <span class="pill">${r.phase} ${t}</span></div>`;
+    const t = r.target ? `&rarr;&nbsp;${r.target}` : "";
+    return `<div class="row">
+      <span class="row-left">
+        <span class="dot" style="background:${r.color}"></span>
+        <span class="name" style="color:${r.color}">robot&nbsp;${r.id}</span>
+      </span>
+      <span class="pill">${r.phase}${t ? "&nbsp;" + t : ""}</span>
+    </div>`;
   }).join("");
 }
+
+// ── mission log ──────────────────────────────────────────────────
+
+let _logLastT = null;  // track newest event timestamp to detect new entries
+
+function machineNum(machineStr){
+  // "machine_2" -> "2"
+  const m = machineStr.match(/(\d+)$/);
+  return m ? m[1] : machineStr;
+}
+
+function renderMissionLog(events, robots){
+  const colorOf = id => {
+    const r = robots.find(r => r.id === id);
+    return r ? r.color : "var(--muted)";
+  };
+
+  const countEl = document.getElementById("log-count");
+  const logEl   = document.getElementById("mission-log");
+  const emptyEl = document.getElementById("log-empty");
+
+  if (!events || events.length === 0){
+    countEl.textContent = "0 deliveries";
+    if (!emptyEl){
+      logEl.innerHTML = `<div class="log-empty" id="log-empty">awaiting first delivery&hellip;</div>`;
+    }
+    return;
+  }
+
+  countEl.textContent = events.length + (events.length === 9 ? "+" : "") + " recent";
+
+  // Detect if the topmost event is new (different timestamp from last render)
+  const newestT = events[0] ? events[0].t : null;
+  const hasNew = newestT !== null && newestT !== _logLastT;
+  _logLastT = newestT;
+
+  logEl.innerHTML = events.map((ev, idx)=>{
+    const color  = colorOf(ev.robot);
+    const mNum   = machineNum(ev.machine);
+    const isNew  = hasNew && idx === 0;
+    return `<div class="log-entry${isNew ? " log-new" : ""}">
+      <span class="log-time">[${ev.t.toFixed(1)}s]</span>
+      <span class="log-robot" style="color:${color}">robot&nbsp;${ev.robot}</span>
+      <span class="log-detail">&middot;&nbsp;delivered from machine&nbsp;${mNum}</span>
+    </div>`;
+  }).join("");
+}
+
+// ── poll loop (preserved + extended) ────────────────────────────
 
 async function poll(){
   try{
     const t = await (await fetch("/api/telemetry")).json();
-    document.getElementById("uptime").textContent = t.sim_time + "s";
-    document.getElementById("delivered").textContent = t.delivered;
-    document.getElementById("throughput").textContent = t.throughput_per_min + "/min";
-    document.getElementById("sep").textContent = t.min_robot_separation==null ? "—" : t.min_robot_separation + "m";
+    document.getElementById("uptime").textContent      = t.sim_time + "s";
+    document.getElementById("delivered").textContent   = t.delivered;
+    document.getElementById("throughput").textContent  = t.throughput_per_min + "/min";
+    document.getElementById("sep").textContent         = t.min_robot_separation==null ? "—" : t.min_robot_separation + "m";
     document.getElementById("ctl-rule").classList.toggle("on", t.controller==="rule");
     document.getElementById("ctl-learned").classList.toggle("on", t.controller==="learned");
     const acc = t.perception_accuracy, clean = t.clean_accuracy;
-    document.getElementById("accval").textContent = acc==null ? "—" : Math.round(acc*100)+"%";
-    document.getElementById("accbar").style.width = acc==null ? "0%" : Math.round(acc*100)+"%";
-    document.getElementById("cleanval").textContent = clean==null ? "—" : Math.round(clean*100)+"%";
-    document.getElementById("cleanbar").style.width = clean==null ? "0%" : Math.round(clean*100)+"%";
+    document.getElementById("accval").textContent    = acc==null   ? "—" : Math.round(acc*100)+"%";
+    document.getElementById("accbar").style.width    = acc==null   ? "0%"    : Math.round(acc*100)+"%";
+    document.getElementById("cleanval").textContent  = clean==null ? "—" : Math.round(clean*100)+"%";
+    document.getElementById("cleanbar").style.width  = clean==null ? "0%"    : Math.round(clean*100)+"%";
     renderMachines(t.machines, t.robots);
     renderRobots(t.robots);
+    renderMissionLog(t.recent_events || [], t.robots);
   }catch(e){}
 }
 setInterval(poll, 400);

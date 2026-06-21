@@ -297,6 +297,11 @@ class FleetSimManager:
             })
         accuracy = round(float(np.mean(self._acc)), 3) if self._acc else None
         clean_accuracy = round(float(np.mean(self._acc_clean)), 3) if self._acc_clean else None
+        # Recent deliveries, newest first — the live mission log (robot k delivered <part> from <machine>).
+        recent_events = [
+            {"robot": k, "machine": mname, "part": part, "t": round(t, 1)}
+            for (k, mname, part, t) in ctrl.events[-9:][::-1]
+        ]
         return {
             "sim_time": round(sim_time, 1),
             "delivered": ctrl.delivered,
@@ -308,6 +313,7 @@ class FleetSimManager:
             "min_robot_separation": round(ctrl.min_sep, 2) if ctrl.min_sep != math.inf else None,
             "robots": robots,
             "machines": machines,
+            "recent_events": recent_events,
         }
 
     # --- schematic (top-down, no GL) -----------------------------------------------------
