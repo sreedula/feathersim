@@ -297,9 +297,11 @@ class FleetSimManager:
         robots = []
         for k in range(world.n_robots):
             x, y, yaw = world.robot_pose(k)
+            vx, vy = ctrl.vel[k]                          # ORCA's commanded world velocity (0 when parked)
             robots.append({
                 "id": k, "color": _hex(_ROBOT_COLORS[k]), "phase": ctrl.phase[k],
                 "target": ctrl.target[k], "pose": {"x": round(x, 2), "y": round(y, 2), "yaw": round(yaw, 2)},
+                "speed": round(math.hypot(vx, vy), 2),
             })
         accuracy = round(float(np.mean(self._acc)), 3) if self._acc else None
         clean_accuracy = round(float(np.mean(self._acc_clean)), 3) if self._acc_clean else None

@@ -444,12 +444,13 @@ function renderMachines(machines, robots){
 function renderRobots(robots){
   document.getElementById("robots").innerHTML = robots.map(r=>{
     const t = r.target ? `&rarr;&nbsp;${r.target}` : "";
+    const spd = (r.speed!=null && r.speed>0.01) ? `<span class="pill">${r.speed.toFixed(2)}&nbsp;m/s</span>` : "";
     return `<div class="row">
       <span class="row-left">
         <span class="dot" style="background:${r.color}"></span>
         <span class="name" style="color:${r.color}">robot&nbsp;${r.id}</span>
       </span>
-      <span class="pill">${r.phase}${t ? "&nbsp;" + t : ""}</span>
+      <span class="badges">${spd}<span class="pill">${r.phase}${t ? "&nbsp;" + t : ""}</span></span>
     </div>`;
   }).join("");
 }
