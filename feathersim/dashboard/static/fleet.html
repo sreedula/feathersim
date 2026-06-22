@@ -342,6 +342,12 @@
       <div class="hint">Swaps the drive controller live across all robots.</div>
     </div>
 
+    <div class="panel">
+      <div class="panel-head"><h2>Scheduling strategy</h2></div>
+      <div id="strategy-toggle" class="toggle"></div>
+      <div class="hint">Which <code>done</code> machine a free robot picks next — switch it live.</div>
+    </div>
+
     <!-- perception difficulty slider -->
     <div class="panel">
       <div class="panel-head"><h2>Perception difficulty</h2></div>
@@ -411,6 +417,20 @@ async function post(url, body){
   try{ await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); }catch(e){}
 }
 function setController(name){ post("/api/controller",{name}); }
+function setStrategy(name){ post("/api/strategy",{name}); }
+let _strategyButtons="";
+function renderStrategy(strategies, current){
+  const sig = (strategies||[]).join(",");
+  if(sig !== _strategyButtons){                       // (re)build buttons only when the option set changes
+    _strategyButtons = sig;
+    document.getElementById("strategy-toggle").innerHTML = (strategies||[]).map(s=>
+      `<button id="strat-${s}" onclick="setStrategy('${s}')">${s.replace(/_/g," ")}</button>`).join("");
+  }
+  (strategies||[]).forEach(s=>{
+    const el=document.getElementById("strat-"+s);
+    if(el) el.classList.toggle("on", s===current);
+  });
+}
 let diffTimer=null;
 function setDifficulty(v){
   document.getElementById("diffval").textContent=(+v).toFixed(2);
@@ -513,6 +533,7 @@ async function poll(){
     document.getElementById("sep").textContent         = t.min_robot_separation==null ? "—" : t.min_robot_separation + "m";
     document.getElementById("ctl-rule").classList.toggle("on", t.controller==="rule");
     document.getElementById("ctl-learned").classList.toggle("on", t.controller==="learned");
+    renderStrategy(t.strategies, t.strategy);
     const acc = t.perception_accuracy, clean = t.clean_accuracy;
     document.getElementById("accval").textContent    = acc==null   ? "—" : Math.round(acc*100)+"%";
     document.getElementById("accbar").style.width    = acc==null   ? "0%"    : Math.round(acc*100)+"%";

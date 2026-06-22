@@ -64,6 +64,15 @@ def create_app(manager: FleetSimManager | None = None) -> FastAPI:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return JSONResponse({"controller": mgr.controller_name})
 
+    @app.post("/api/strategy")
+    async def strategy(cmd: ControllerCommand, request: Request) -> JSONResponse:
+        mgr = _manager(request)
+        try:
+            mgr.set_strategy(cmd.name)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return JSONResponse({"strategy": mgr.strategy_name})
+
     @app.post("/api/difficulty")
     async def difficulty(cmd: DifficultyCommand, request: Request) -> JSONResponse:
         mgr = _manager(request)

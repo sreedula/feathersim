@@ -48,6 +48,16 @@ def test_controller_toggle_rejects_unknown(manager):
         manager.set_controller("teleop")
 
 
+def test_strategy_switch_swaps_the_live_strategy(manager):
+    from feathersim.fleet.scheduling import balanced, longest_waiting
+    manager.set_strategy("balanced")
+    assert manager.strategy_name == "balanced" and manager.ctrl.manager.strategy is balanced
+    manager.set_strategy("longest_waiting")
+    assert manager.ctrl.manager.strategy is longest_waiting
+    with pytest.raises(ValueError):
+        manager.set_strategy("round_robin")
+
+
 def test_difficulty_clamps_to_unit_interval(manager):
     manager.set_difficulty(1.7)
     assert manager.difficulty == 1.0
@@ -59,10 +69,11 @@ def test_difficulty_clamps_to_unit_interval(manager):
 def test_telemetry_has_command_center_fields(manager):
     t = manager._build_telemetry()
     assert set(t) >= {
-        "sim_time", "delivered", "throughput_per_min", "controller", "difficulty",
-        "perception_accuracy", "clean_accuracy", "robots", "machines", "recent_events",
+        "sim_time", "delivered", "throughput_per_min", "controller", "strategy", "strategies",
+        "difficulty", "perception_accuracy", "clean_accuracy", "robots", "machines", "recent_events",
     }
     assert isinstance(t["recent_events"], list)
+    assert t["strategy"] in t["strategies"] and "balanced" in t["strategies"]
     assert len(t["robots"]) == 3 and len(t["machines"]) == manager.world.n_machines
     assert set(t["machines"][0]) >= {"name", "state", "parts_done", "assigned_to", "perceived_by"}
     assert set(t["robots"][0]) >= {"id", "color", "phase", "target", "pose", "speed"}
@@ -157,4 +168,6 @@ def test_command_center_routes():
         assert "machines" in body and "controller" in body
         assert client.post("/api/controller", json={"name": "learned"}).json()["controller"] == "learned"
         assert client.post("/api/controller", json={"name": "nope"}).status_code == 422
+        assert client.post("/api/strategy", json={"name": "balanced"}).json()["strategy"] == "balanced"
+        assert client.post("/api/strategy", json={"name": "nope"}).status_code == 422
         assert client.post("/api/difficulty", json={"value": 0.8}).json()["difficulty"] == 0.8

@@ -20,7 +20,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from feathersim.control.go_to_pose import velocity_command
-from feathersim.fleet import FleetController, longest_waiting
+from feathersim.fleet import STRATEGIES, FleetController, longest_waiting
 from feathersim.perception.dataset import IMAGE_SIZE
 from feathersim.perception.infer import Perception
 from feathersim.perception.randomize import DomainRandomizer, apply_scene
@@ -66,6 +66,7 @@ class FleetSimManager:
         self.policy = PolicyController(load_or_train_policy())
         self.difficulty = difficulty            # live perception-difficulty slider (0=clean, 1=full DR)
         self.controller_name = "rule"           # "rule" (hand-coded) or "learned" (BC policy)
+        self.strategy_name = "longest_waiting"  # live scheduling strategy (see STRATEGIES)
         self.speed, self.steps_per_publish = speed, steps_per_publish
         self._rngs = [np.random.default_rng(seed * 100 + k) for k in range(n_robots)]
         # Recent perceived==true booleans → live accuracy, for the deployed robust model and the clean one.
@@ -171,6 +172,14 @@ class FleetSimManager:
             raise ValueError(f"controller must be 'rule' or 'learned', got {name!r}")
         self.controller_name = name
         self.ctrl.velocity_fn = velocity_command if name == "rule" else self.policy
+
+    def set_strategy(self, name: str) -> None:
+        """Swap the live scheduling strategy (longest_waiting / nearest_done / balanced). The manager reads
+        ``strategy`` on the sim thread; this single attribute write is atomic under the GIL (lock-free)."""
+        if name not in STRATEGIES:
+            raise ValueError(f"strategy must be one of {sorted(STRATEGIES)}, got {name!r}")
+        self.strategy_name = name
+        self.ctrl.manager.strategy = STRATEGIES[name]
 
     def set_difficulty(self, value: float) -> None:
         """Set perception difficulty in [0, 1] (scales the live DR). Single atomic write, lock-free (GIL)."""
@@ -332,6 +341,8 @@ class FleetSimManager:
             "delivered": ctrl.delivered,
             "throughput_per_min": round(ctrl.delivered * 60.0 / sim_time, 1) if sim_time > 0 else 0.0,
             "controller": self.controller_name,
+            "strategy": self.strategy_name,
+            "strategies": sorted(STRATEGIES),
             "difficulty": round(self.difficulty, 2),
             "perception_accuracy": accuracy,
             "clean_accuracy": clean_accuracy,
