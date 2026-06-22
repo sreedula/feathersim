@@ -32,9 +32,13 @@ start of every session.**
 ```
 make install     # pip install -r requirements.txt
 make test        # pytest
-make demo        # python -m feathersim.demo  (headless autonomy demo)
-make dashboard   # launch FastAPI teleop/telemetry UI
+make demo        # python -m feathersim.demo  (headless single-robot autonomy demo)
+make fleet       # headless multi-robot fleet demo (scheduling comparison)
+make bench       # benchmark fleet coordination across configs × strategies → docs/fleet_bench.json
+make dashboard   # launch the multi-robot command center (FastAPI)
+make teleop      # launch the single-robot WASD-teleop dashboard
 make train       # train the perception model on auto-labeled sim data
+make policy      # behavior-clone the controller into a learned policy
 ```
 
 ## Subagents (project, in `.claude/agents/`)

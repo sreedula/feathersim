@@ -2,6 +2,23 @@
 
 Architecture decision log. Each entry: date, decision, why, tradeoff.
 
+## 2026-06-21 — v5 follow-ups: arm animation opt-in, fleet benchmark, tactical trails, HUD telemetry
+**Decision:** A batch of small, independent polish/observability changes on the ORCA base. (1) Arm
+animation in the single-robot loop is **opt-in** (`Robot(animate_arm=True)`), not on by default — pick/place
+stay instant logical handoffs for the SDK contract + tests, and the fleet keeps animating in its own SM
+(so its robots don't double-animate); only the rendered demo/GIF opt in. (2) A `scripts/bench_fleet.py`
+(+`make bench`) records the coordination result quantitatively (configs × strategies → completion /
+collision-freedom / throughput, JSON). (3) The tactical map draws each robot's **actual** trajectory as a
+fading trail, kept visually distinct from the straight A* plan. (4) Per-robot speed + a plain-language
+onboard-camera status HUD surface what each robot is doing.
+**Why:** These make the system more *legible* and *measurable* without touching the verified coordination
+core — the benchmark turns "ORCA is better" into numbers anyone can re-run, the trails make ORCA's smooth
+avoidance visible, and the speed/HUD make the live floor readable. Opt-in arm animation keeps the change
+additive (zero risk to the SDK contract, the fleet, or the test suite).
+**Tradeoff:** Animating the single-robot arm lowers the *demo's* reported throughput (the arm motion is
+real sim time now) — accepted as more honest. The trail is a bounded per-robot deque (last 48 points), so
+it's short by design (recent history, not the whole route).
+
 ## 2026-06-20 — v5: ORCA for fleet coordination (replacing the priority-yield heuristic)
 **Decision:** Replace the symmetric contact-backstop + priority-yield deadlock-breaker with **ORCA**
 (Optimal Reciprocal Collision Avoidance — a faithful RVO2 port in `feathersim/fleet/orca.py`). Architecture:
