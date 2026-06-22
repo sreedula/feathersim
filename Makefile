@@ -1,4 +1,4 @@
-.PHONY: install test demo fleet bench dashboard teleop train policy clean
+.PHONY: install test demo fleet bench bench-perception dashboard teleop train policy clean
 
 install:
 	python3 -m pip install -r requirements.txt
@@ -14,6 +14,9 @@ fleet:
 
 bench:
 	python3 scripts/bench_fleet.py --json docs/fleet_bench.json
+
+bench-perception:
+	python3 scripts/bench_perception.py --json docs/perception_bench.json
 
 # No --reload: the sim is a stateful in-process thread; a reload would reset the running demo.
 # `dashboard` = the v2 multi-robot command center; `teleop` = the single-robot WASD-override dashboard.

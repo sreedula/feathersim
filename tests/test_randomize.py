@@ -187,3 +187,18 @@ def test_committed_metrics_show_robust_beats_clean():
     # tradeoff) — it stays close to the clean model on clean conditions, not necessarily ≥.
     assert sa["robust_model"]["clean"] >= sa["clean_model"]["clean"] - 0.05
     assert sa["robust_model"]["randomized"] > m["state_majority_baseline"] + 0.2   # clears baseline
+
+
+@rendering
+def test_bench_perception_smoke():
+    """The perception benchmark's per-difficulty scorer runs and shows the robust model at least matching
+    the clean baseline on clean data (difficulty 0)."""
+    import sys, pathlib
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts"))
+    from bench_perception import bench
+
+    rows = bench(samples=12, seed=0)
+    assert {r["difficulty"] for r in rows} == {0.0, 0.25, 0.5, 0.75, 1.0}
+    clean_row = next(r for r in rows if r["difficulty"] == 0.0)
+    assert clean_row["robust_state_acc"] >= clean_row["clean_state_acc"]
+    assert all(set(r) >= {"robust_state_acc", "clean_state_acc", "gap", "baseline"} for r in rows)

@@ -1,0 +1,42 @@
+[
+  {
+    "difficulty": 0.0,
+    "robust_state_acc": 1.0,
+    "clean_state_acc": 1.0,
+    "gap": 0.0,
+    "baseline": 0.4,
+    "n": 180
+  },
+  {
+    "difficulty": 0.25,
+    "robust_state_acc": 0.989,
+    "clean_state_acc": 0.933,
+    "gap": 0.056,
+    "baseline": 0.367,
+    "n": 180
+  },
+  {
+    "difficulty": 0.5,
+    "robust_state_acc": 0.972,
+    "clean_state_acc": 0.867,
+    "gap": 0.106,
+    "baseline": 0.356,
+    "n": 180
+  },
+  {
+    "difficulty": 0.75,
+    "robust_state_acc": 0.989,
+    "clean_state_acc": 0.817,
+    "gap": 0.172,
+    "baseline": 0.383,
+    "n": 180
+  },
+  {
+    "difficulty": 1.0,
+    "robust_state_acc": 0.956,
+    "clean_state_acc": 0.767,
+    "gap": 0.189,
+    "baseline": 0.339,
+    "n": 180
+  }
+]
