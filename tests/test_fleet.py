@@ -195,3 +195,25 @@ def test_bench_fleet_smoke():
     row = _bench_one(2, 2, 0, 4, "longest_waiting", seeds=1)
     assert row["collision_free"] and row["completion_rate"] == 1.0
     assert row["throughput_per_min_mean"] > 0 and set(row) >= {"config", "strategy", "worst_sep"}
+
+
+def test_fleet_orca_deflects_head_on_robots():
+    """ORCA in the *fleet driving loop* (not just the pure module): two robots driven straight at each
+    other's positions must deflect, never breach 2·radius, and pass through to swap sides."""
+    from feathersim.fleet.executor import FleetController, _min_separation
+
+    world = World(n_machines=2, seed=0, n_obstacles=0, n_robots=2)
+    ctrl = FleetController(world, _ground_truth_perceive(world), strategy=longest_waiting)
+    world.set_base_pose(-1.2, 0.0, 0.0, robot=0)
+    world.set_base_pose(1.2, 0.0, 0.0, robot=1)
+    ctrl.phase = ["to_table", "to_table"]                 # both driving → reciprocal ORCA peers
+    ctrl.goal = [(1.2, 0.0, 0.0), (-1.2, 0.0, 0.0)]       # head-on: each aims at the other's start
+    ctrl.path = [None, None]
+    worst = math.inf
+    for _ in range(900):
+        ctrl._drive(0)
+        ctrl._drive(1)
+        world.step()
+        worst = min(worst, _min_separation(world))
+    assert worst >= 2 * ROBOT_RADIUS                       # never overlapped
+    assert world.robot_pose(0)[0] > 0.5 and world.robot_pose(1)[0] < -0.5  # passed through, swapped sides
