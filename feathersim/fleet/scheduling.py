@@ -26,7 +26,25 @@ def nearest_done(robot_xy: XY, candidates: list[str], *, done_since: dict[str, f
     return min(candidates, key=lambda m: (math.dist(robot_xy, machine_xy(m)), m))
 
 
+def balanced(robot_xy: XY, candidates: list[str], *, done_since: dict[str, float],
+             machine_xy: Callable[[str], XY], wait_weight: float = 0.5) -> str:
+    """Trade off travel against waiting: pick the nearest machine *unless* a meaningfully older-waiting one
+    exists. ``nearest_done`` alone can starve a far machine; ``longest_waiting`` alone ignores travel — this
+    scores ``distance + wait_weight·(age behind the oldest candidate)`` and takes the min. ``wait_weight``
+    is the metres of extra travel tolerated per second a machine has waited longer (relative, so it doesn't
+    drift as absolute sim time grows). Starvation-free: the longest-waiting machine has zero wait penalty."""
+    oldest = min((done_since.get(m, math.inf) for m in candidates), default=math.inf)
+
+    def score(m: str) -> float:
+        seen = done_since.get(m, math.inf)
+        wait_behind = 0.0 if (math.isinf(seen) or math.isinf(oldest)) else (seen - oldest)
+        return math.dist(robot_xy, machine_xy(m)) + wait_weight * wait_behind
+
+    return min(candidates, key=lambda m: (score(m), m))
+
+
 STRATEGIES: dict[str, Strategy] = {
     "longest_waiting": longest_waiting,
     "nearest_done": nearest_done,
+    "balanced": balanced,
 }

@@ -2,7 +2,7 @@
 
 from feathersim.fleet.executor import FleetController, FleetReport, make_perceive_fn, run_fleet
 from feathersim.fleet.manager import FleetManager
-from feathersim.fleet.scheduling import STRATEGIES, longest_waiting, nearest_done
+from feathersim.fleet.scheduling import STRATEGIES, balanced, longest_waiting, nearest_done
 
 __all__ = [
     "run_fleet",
@@ -13,4 +13,5 @@ __all__ = [
     "STRATEGIES",
     "longest_waiting",
     "nearest_done",
+    "balanced",
 ]

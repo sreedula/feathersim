@@ -43,6 +43,21 @@ def test_nearest_done_picks_closest():
     assert chosen == "machine_0"
 
 
+def test_balanced_prefers_near_when_waits_are_equal():
+    from feathersim.fleet.scheduling import balanced
+    xy = {"m0": (0.0, 0.0), "m1": (3.0, 0.0)}
+    chosen = balanced((0.2, 0.0), ["m0", "m1"], done_since={"m0": 1.0, "m1": 1.0}, machine_xy=xy.__getitem__)
+    assert chosen == "m0"                                 # equal waits → take the nearer
+
+
+def test_balanced_takes_far_machine_when_it_has_waited_much_longer():
+    from feathersim.fleet.scheduling import balanced
+    xy = {"m0": (0.0, 0.0), "m1": (1.0, 0.0)}             # m1 a touch farther...
+    # ...but done since t=1 vs m0's t=11 (10 s longer wait) → wait penalty (0.5·10=5) outweighs the 1 m gap
+    chosen = balanced((0.0, 0.0), ["m0", "m1"], done_since={"m0": 11.0, "m1": 1.0}, machine_xy=xy.__getitem__)
+    assert chosen == "m1"                                 # starvation-free: the long-waiting one wins
+
+
 # --- task allocation: never double-book a machine ------------------------------------------------
 
 

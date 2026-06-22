@@ -22,12 +22,12 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 from feathersim.fleet import run_fleet  # noqa: E402
-from feathersim.fleet.scheduling import longest_waiting, nearest_done  # noqa: E402
+from feathersim.fleet.scheduling import balanced, longest_waiting, nearest_done  # noqa: E402
 from feathersim.perception.infer import PerceivedState  # noqa: E402
 from feathersim.sim.machine import MachineState  # noqa: E402
 from feathersim.sim.world import ROBOT_RADIUS, World  # noqa: E402
 
-_STRATEGIES = {"longest_waiting": longest_waiting, "nearest_done": nearest_done}
+_STRATEGIES = {"longest_waiting": longest_waiting, "nearest_done": nearest_done, "balanced": balanced}
 # (machines, robots, obstacles, parts) — the headline 4×4, the smaller fleets, and the tight pillar cell.
 _CONFIGS = [(4, 4, 0, 8), (3, 3, 0, 6), (3, 2, 0, 6), (2, 2, 0, 6), (3, 2, 2, 6)]
 _CONTACT = 2.0 * ROBOT_RADIUS  # bodies overlap below this centre distance
