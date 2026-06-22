@@ -256,16 +256,33 @@ class FleetSimManager:
         img.save(buf, format="JPEG", quality=86)
         return buf.getvalue()
 
+    _PHASE_LABEL = {
+        "select": "scanning", "to_machine": "en route", "pick": "grasping",
+        "pick_lift": "lifting", "to_table": "delivering", "place": "placing", "place_lift": "lifting",
+    }
+
     def _render_robotcams(self) -> bytes:
-        """Composite each robot's forward onboard camera into a labelled horizontal strip (the scene is
-        already clean here — `_render_3d` ran reset_scene + sync_visuals just before)."""
+        """Composite each robot's forward onboard camera into a strip with a small robot-HUD overlay —
+        a centre crosshair + a live status bar (current phase + target). The scene is already clean here
+        (`_render_3d` ran reset_scene + sync_visuals just before)."""
         strip = Image.new("RGB", (CAM_SIZE * self.world.n_robots, CAM_SIZE), (12, 14, 18))
         draw = ImageDraw.Draw(strip)
         for k in range(self.world.n_robots):
             self._cam_renderer.update_scene(self.world.data, f"robotcam_{k}")
             strip.paste(Image.fromarray(self._cam_renderer.render()), (k * CAM_SIZE, 0))
-            draw.rectangle([k * CAM_SIZE, 0, (k + 1) * CAM_SIZE - 1, CAM_SIZE - 1], outline=_hex(_ROBOT_COLORS[k]), width=3)
-            draw.text((k * CAM_SIZE + 8, 6), f"robot {k}", fill=_hex(_ROBOT_COLORS[k]))
+            ox = k * CAM_SIZE
+            color = _hex(_ROBOT_COLORS[k])
+            cx, cy = ox + CAM_SIZE // 2, CAM_SIZE // 2     # reticle
+            draw.line([cx - 9, cy, cx + 9, cy], fill=color, width=1)
+            draw.line([cx, cy - 9, cx, cy + 9], fill=color, width=1)
+            draw.ellipse([cx - 5, cy - 5, cx + 5, cy + 5], outline=color, width=1)
+            draw.rectangle([ox, 0, ox + CAM_SIZE - 1, CAM_SIZE - 1], outline=color, width=3)
+            draw.text((ox + 8, 6), f"robot {k}", fill=color)
+            phase = self._PHASE_LABEL.get(self.ctrl.phase[k], self.ctrl.phase[k])  # live status bar
+            tgt = self.ctrl.target[k]
+            status = f"{phase}" + (f"  {tgt}" if tgt and self.ctrl.phase[k] != "select" else "")
+            draw.rectangle([ox, CAM_SIZE - 22, ox + CAM_SIZE - 1, CAM_SIZE - 1], fill=(10, 12, 16))
+            draw.text((ox + 8, CAM_SIZE - 18), status, fill=(210, 216, 224))
         buf = io.BytesIO()
         strip.save(buf, format="JPEG", quality=80)
         return buf.getvalue()
