@@ -114,6 +114,20 @@ visually inspects every change, `reviewer` audits every diff.
   recovery, static-obstacle).
 - **Live mission log + UI overhaul.** The command center narrates deliveries in real time and got a
   mission-control visual pass (`frontend-designer`).
+- **Animated single-robot arm + trajectory trails.** The single-robot loop's arm now visibly reaches in to
+  grasp (opt-in `Robot(animate_arm=True)`), and the tactical map draws each robot's fading trajectory trail —
+  the smooth ORCA-curved path travelled, distinct from the straight A* plan.
+
+**Benchmark** (`python scripts/bench_fleet.py`, ground-truth perception, 8 seeds/row — the ORCA result):
+
+| config | strategy | completed | collision-free | min sep | mean / max time | throughput |
+|---|---|---|---|---|---|---|
+| 4m×4r | longest_waiting | 8/8 | ✅ | 0.450 m | 27.5 / 31.1 s | 17.6 / min |
+| 3m×3r | longest_waiting | 8/8 | ✅ | 0.450 m | 25.6 / 27.2 s | 14.1 / min |
+| 3m×2r + 2 pillars | longest_waiting | 8/8 | ✅ | 0.450 m | 34.6 / 37.0 s | 10.4 / min |
+
+*Every config × strategy completes every seed, collision-free, with no slow near-wedge — the pillar cell
+that the old heuristic could wedge now completes cleanly.*
 
 ## How the loop closes
 
@@ -138,19 +152,20 @@ Every phase ran the same loop: smallest vertical slice → `test-runner` (nothin
 independent `reviewer` (address CRITICAL/HIGH before commit) → log `DECISIONS`/`LEARNINGS` → commit. The
 reviewer caught bugs a green suite hid — a robot body silently clipping a pillar (planning protects the
 *center*, the follower bows), a collision guarantee that held only on the lucky seed 0, and a 4-robot
-deadlock the bare backstop masked. All are written up in [`LEARNINGS.md`](LEARNINGS.md). **183 tests**;
+deadlock the bare backstop masked. All are written up in [`LEARNINGS.md`](LEARNINGS.md). **186 tests**;
 rendering-dependent tests skip without a GL backend (`MUJOCO_GL=egl`/`osmesa` to run them in CI).
 
 ## Docs
 
-- [`PLAN.md`](PLAN.md) — phased roadmap + acceptance criteria (v1 phases 0–6, v2 phases A–E, v3 iterations 1–5)
+- [`PLAN.md`](PLAN.md) — phased roadmap + acceptance criteria (v1 phases 0–6, v2 phases A–E, v3 iterations 1–5, v4 + v5)
 - [`DECISIONS.md`](DECISIONS.md) — architecture decision log (why)
 - [`LEARNINGS.md`](LEARNINGS.md) — sim/training gotchas, never hit twice
 - [`CLAUDE.md`](CLAUDE.md) — conventions + the engineering loop
 
-## Regenerating the GIFs
+## Scripts
 
 ```bash
-python3 scripts/record_fleet_gif.py --out docs/fleet.gif     # the command-center fleet view
-python3 scripts/record_gif.py --parts 3 --out docs/autonomy.gif  # the single-robot loop
+python3 scripts/bench_fleet.py --json docs/fleet_bench.json   # fleet coordination benchmark (table above)
+python3 scripts/record_fleet_gif.py --out docs/fleet.gif      # the command-center fleet view
+python3 scripts/record_gif.py --parts 3 --out docs/autonomy.gif  # the single-robot loop (arm reaches in)
 ```
