@@ -46,7 +46,7 @@ def main() -> None:
             "needs a GL context — on a headless host set MUJOCO_GL=egl (or osmesa) and retry."
         ) from exc
     perception = Perception(load_or_train_model())
-    robot = Robot(world, plan=True)  # route around the obstacles via A*
+    robot = Robot(world, plan=True, animate_arm=True)  # A* around obstacles; arm reaches to grasp/place
     try:
         report = run_autonomy(
             world, perception, renderer, target_parts=TARGET_PARTS, robot=robot, on_event=_print_tend

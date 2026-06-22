@@ -59,6 +59,7 @@ class Robot:
         geom: MecanumGeometry = MecanumGeometry(),
         plan: bool = False,
         controller=velocity_command,
+        animate_arm: bool = False,
     ) -> None:
         self.world = world
         self.robot_id = robot_id              # which base in the world this facade drives
@@ -66,6 +67,11 @@ class Robot:
         self.gains = gains
         self.tolerance = tolerance
         self.geom = geom
+        # With animate_arm=True, pick/place visibly swing the arm into the machine / over the table and
+        # back (stepping the world while the parked base holds still) — for the rendered single-robot demo.
+        # Default off so the SDK's pick/place stay instant logical handoffs (the fleet animates the arm in
+        # its own state machine, so its robots keep this off to avoid double-animating).
+        self._animate_arm = animate_arm
         # The velocity law move_to drives with — the P-controller by default, or a Phase-D learned policy.
         self._controller = controller
         self.holding: str | None = None      # name of the part currently carried, or None
@@ -144,10 +150,12 @@ class Robot:
             raise PreconditionError(f"not parked at {machine!r}; call move_to first")
         if m.state is not MachineState.DONE:
             raise PreconditionError(f"{machine!r} is {m.state.value}, not done")
+        self._reach_arm()                            # swing the arm into the machine (if animating)
         part = f"part_{machine}_{m.parts_done}"
         m.reset(self.world.time)  # unload finished part; machine reloads and restarts
         self.holding = part
         self.world.set_carried(self.robot_id, True)  # the part now rides this robot's gripper
+        self._retract_arm()                          # retract to the carry pose
         return part
 
     def place(self, target: str | Pose = "table") -> str:
@@ -159,10 +167,12 @@ class Robot:
             raise PreconditionError("not holding a part")
         if not self._at(self.tending_pose(target) if isinstance(target, str) else target):
             raise PreconditionError(f"not parked at {target!r}; call move_to first")
+        self._reach_arm()                             # extend the arm over the table (if animating)
         part, self.holding = self.holding, None
         self.delivered.append(part)
         self.world.set_carried(self.robot_id, False)  # part leaves the gripper...
         self.world.deposit_part()                     # ...and lands on the output-table stack
+        self._retract_arm()
         return part
 
     def tend(self, machine: str) -> str:
@@ -184,6 +194,29 @@ class Robot:
             self.world.step()
 
     # --- internals -----------------------------------------------------------------------
+
+    def _reach_arm(self) -> None:
+        """Animate the arm out to the grasp/place pose (no-op unless ``animate_arm``)."""
+        if not self._animate_arm:
+            return
+        from feathersim.sim.world import ARM_REACH
+        self._slew_arm(ARM_REACH)
+
+    def _retract_arm(self) -> None:
+        """Animate the arm back to the tucked carry pose (no-op unless ``animate_arm``)."""
+        if not self._animate_arm:
+            return
+        from feathersim.sim.world import ARM_REST
+        self._slew_arm(ARM_REST)
+
+    def _slew_arm(self, pose, *, max_steps: int = 140) -> None:
+        # The parked base holds still (gravcomp arm doesn't perturb it); stepping advances sim time and
+        # ticks the machine FSMs, which is fine — the machine just reset and is cycling again.
+        self.world.set_arm_target(self.robot_id, pose)
+        for _ in range(max_steps):
+            if self.world.arm_at(self.robot_id, pose):
+                break
+            self.world.step()
 
     def _machine(self, name: str):
         for m in self.world.machines:

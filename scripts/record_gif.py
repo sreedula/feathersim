@@ -24,6 +24,7 @@ from feathersim.autonomy import run_autonomy  # noqa: E402
 from feathersim.perception.dataset import IMAGE_SIZE  # noqa: E402
 from feathersim.perception.infer import Perception  # noqa: E402
 from feathersim.perception.train import load_or_train_model  # noqa: E402
+from feathersim.sdk.robot import Robot  # noqa: E402
 from feathersim.sim.world import World  # noqa: E402
 
 
@@ -63,8 +64,9 @@ def main() -> None:
     feed = mujoco.Renderer(world.model, height=args.size, width=args.size)
     perc = mujoco.Renderer(world.model, height=IMAGE_SIZE, width=IMAGE_SIZE)
     recorder = _FrameRecorder(world, feed, args.stride)
+    robot = Robot(world, plan=True, animate_arm=True)  # show the arm reach into the machine / over the table
     try:
-        report = run_autonomy(world, perception, perc, target_parts=args.parts)
+        report = run_autonomy(world, perception, perc, target_parts=args.parts, robot=robot)
     finally:
         feed.close()
         perc.close()

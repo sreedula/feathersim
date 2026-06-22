@@ -221,3 +221,30 @@ def test_deposit_part_caps_at_stack_capacity():
         world.deposit_part()                     # must not IndexError past capacity
     assert world.delivered_total == n_slots + 3
     assert all(world.model.geom_rgba[g, 3] > 0.5 for g in world._stack_gid)  # all slots filled
+
+
+# --- opt-in arm animation (v5: the single-robot demo's arm reaches to grasp/place) ----------------
+
+def test_pick_is_instant_by_default():
+    world = World(n_machines=1, seed=0)
+    robot = Robot(world)                          # animate_arm defaults off
+    _park_at(robot, "machine_0")
+    world.machines[0].state = MachineState.DONE
+    t0 = world.time
+    robot.pick("machine_0")
+    assert world.time == t0                        # instant logical handoff — no world stepping
+    assert robot.holding is not None
+
+
+def test_pick_animates_arm_when_enabled():
+    from feathersim.sim.world import ARM_REST
+    world = World(n_machines=1, seed=0)
+    robot = Robot(world, animate_arm=True)
+    _park_at(robot, "machine_0")
+    world.machines[0].state = MachineState.DONE
+    t0 = world.time
+    robot.pick("machine_0")
+    assert world.time > t0                          # animating stepped the world (reach + retract)
+    assert world.arm_at(0, ARM_REST)                # ended back in the carry pose
+    assert robot.holding is not None
+    assert world.robot_pose(0) == pytest.approx(robot.tending_pose("machine_0"), abs=0.02)  # base held still
