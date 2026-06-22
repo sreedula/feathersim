@@ -46,6 +46,7 @@ HUD_CROP = 150   # the perception-HUD cell renders each machine crop at this siz
 HUD_HEADER = 30
 HUD_PAD = 10
 HUD_FOOTER = 62  # cell space below the crop for prediction + confidence bar + verdict
+TRAIL_LEN = 48   # how many recent positions each robot's tactical-map trajectory trail keeps
 
 
 def _hex(rgb: tuple[float, float, float]) -> str:
@@ -90,6 +91,9 @@ class FleetSimManager:
         # Latest per-machine perception, captured in _perceive for the HUD (the DR-corrupted crop the
         # robust model actually received + its prediction/confidence + agreement with ground truth).
         self._hud_data: list[dict | None] = [None] * self.world.n_machines
+        # Recent (x, y) per robot for the tactical map's fading trajectory trail — the actual ORCA-curved
+        # path travelled (distinct from the straight A* planned line).
+        self._trails: list[deque] = [deque(maxlen=TRAIL_LEN) for _ in range(self.world.n_robots)]
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
 
@@ -195,6 +199,8 @@ class FleetSimManager:
     # --- publishing ----------------------------------------------------------------------
 
     def _publish(self) -> None:
+        for k in range(self.world.n_robots):     # extend each robot's trajectory trail
+            self._trails[k].append(self.world.robot_pose(k)[:2])
         telemetry = self._build_telemetry()
         frame = self._render_schematic()
         frame_hud = self._render_perception_hud()   # PIL-only (uses captured crops); no GL needed
@@ -350,10 +356,19 @@ class FleetSimManager:
             d.text((self._px(mx, my)[0] - 22, self._px(mx, my)[1] - 6), f"{m.name[-1]}:{m.parts_done}",
                    fill=(20, 20, 20))
 
+        for k in range(world.n_robots):                                                          # trajectory trails
+            trail = self._trails[k] if k < len(self._trails) else ()
+            pts = list(trail)
+            base = _ROBOT_COLORS[k]
+            for i in range(1, len(pts)):
+                frac = i / len(pts)                          # fade in toward the newest segment
+                col = tuple(int(255 * c * (0.18 + 0.5 * frac)) for c in base)
+                d.line([self._px(*pts[i - 1]), self._px(*pts[i])], fill=col, width=2)
+
         for k in range(world.n_robots):                                                          # planned paths
             path = ctrl.path[k]
             if path and len(path) > 1:
-                d.line([self._px(x, y) for x, y in path], fill=_hex(_ROBOT_COLORS[k]), width=2)
+                d.line([self._px(x, y) for x, y in path], fill=_hex(_ROBOT_COLORS[k]), width=1)
 
         for k in range(world.n_robots):                                                          # robots
             x, y, yaw = world.robot_pose(k)
