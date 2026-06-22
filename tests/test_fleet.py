@@ -114,7 +114,6 @@ def test_fleet_composes_with_static_obstacles():
         world, _ground_truth_perceive(world), strategy=longest_waiting, target_parts=6, max_sim_seconds=120,
     )
     assert report.completed and not report.collided and report.min_robot_separation >= 2 * ROBOT_RADIUS
-    assert report.min_robot_separation >= 2 * ROBOT_RADIUS
 
 
 def test_both_strategies_log_throughput():
@@ -185,3 +184,14 @@ def test_fleet_end_to_end_with_real_perception():
         renderer.close()
 
     assert report.parts_delivered == 3 and not report.collided
+
+
+def test_bench_fleet_smoke():
+    """The benchmark script's per-config aggregator runs and reports a collision-free completed run."""
+    import sys, pathlib
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts"))
+    from bench_fleet import _bench_one
+
+    row = _bench_one(2, 2, 0, 4, "longest_waiting", seeds=1)
+    assert row["collision_free"] and row["completion_rate"] == 1.0
+    assert row["throughput_per_min_mean"] > 0 and set(row) >= {"config", "strategy", "worst_sep"}
