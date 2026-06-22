@@ -118,6 +118,10 @@ visually inspects every change, `reviewer` audits every diff.
 - **Animated single-robot arm + trajectory trails.** The single-robot loop's arm now visibly reaches in to
   grasp (opt-in `Robot(animate_arm=True)`), and the tactical map draws each robot's fading trajectory trail —
   the smooth ORCA-curved path travelled, distinct from the straight A* plan.
+- **More live controls + readouts.** A `balanced` scheduling strategy (travel vs. waiting tradeoff) joins
+  `longest_waiting`/`nearest_done`, switchable **live** from the command center; per-robot speed and a
+  plain-language onboard-camera status HUD (scanning / en route / grasping / delivering) make the floor
+  readable at a glance.
 
 **Benchmark** (`python scripts/bench_fleet.py`, ground-truth perception, 8 seeds/row — the ORCA result):
 
@@ -129,6 +133,15 @@ visually inspects every change, `reviewer` audits every diff.
 
 *Every config × strategy completes every seed, collision-free, with no slow near-wedge — the pillar cell
 that the old heuristic could wedge now completes cleanly.*
+
+**Perception robustness** (`python scripts/bench_perception.py` — robust vs. clean accuracy as the
+domain-randomization slider rises; the gap widens monotonically):
+
+| difficulty | robust | clean | gap | baseline |
+|---|---|---|---|---|
+| 0.00 | 1.000 | 1.000 | +0.000 | 0.40 |
+| 0.50 | 0.972 | 0.867 | +0.106 | 0.36 |
+| 1.00 | 0.956 | 0.767 | **+0.189** | 0.34 |
 
 ## How the loop closes
 
@@ -167,6 +180,7 @@ rendering-dependent tests skip without a GL backend (`MUJOCO_GL=egl`/`osmesa` to
 
 ```bash
 python3 scripts/bench_fleet.py --json docs/fleet_bench.json   # fleet coordination benchmark (table above)
+python3 scripts/bench_perception.py --json docs/perception_bench.json  # perception robustness vs DR difficulty
 python3 scripts/record_fleet_gif.py --out docs/fleet.gif      # the command-center fleet view
 python3 scripts/record_gif.py --parts 3 --out docs/autonomy.gif  # the single-robot loop (arm reaches in)
 ```
