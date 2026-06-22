@@ -20,9 +20,10 @@ hand-coded↔learned controller toggle and a perception-difficulty slider — at
 
 ```bash
 make install     # pip install -r requirements.txt  (Python 3.11+)
-make test        # pytest — 183 tests
-make demo        # headless single-robot autonomy loop (routes around obstacles)
+make test        # pytest — 186 tests
+make demo        # headless single-robot autonomy loop (routes around obstacles, arm reaches in)
 make fleet       # headless 4-robot fleet, compares scheduling strategies, collision-free
+make bench       # benchmark fleet coordination across configs × strategies
 make dashboard   # the command center at http://localhost:8000  (3D feed + onboard cams + paths + toggle + slider)
 make teleop      # single-robot dashboard with WASD override
 make train       # retrain perception (clean + domain-randomized models)
