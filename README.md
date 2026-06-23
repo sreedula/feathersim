@@ -1,5 +1,7 @@
 # FeatherSim
 
+[![ci](https://github.com/sreedula/feathersim/actions/workflows/ci.yml/badge.svg)](https://github.com/sreedula/feathersim/actions/workflows/ci.yml)
+
 A machine-tending autonomy stack **in simulation**, inspired by Feather Robotics: holonomic wheeled
 mobile robots autonomously tend several CNC-style machines. It ships a developer **skill SDK**, a
 **perception** model trained on **auto-labeled** sim data (hardened with **domain randomization**),
