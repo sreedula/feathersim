@@ -177,6 +177,7 @@ rendering-dependent tests skip without a GL backend (`MUJOCO_GL=egl`/`osmesa` to
 - [`DECISIONS.md`](DECISIONS.md) — architecture decision log (why)
 - [`LEARNINGS.md`](LEARNINGS.md) — sim/training gotchas, never hit twice
 - [`CLAUDE.md`](CLAUDE.md) — conventions + the engineering loop
+- [`ENGINEERING.md`](ENGINEERING.md) — how the engineering *compounds* (the loop + the knowledge that survives context compaction + CI)
 
 ## Scripts
 
