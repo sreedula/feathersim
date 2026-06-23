@@ -34,7 +34,7 @@ class Dataset:
     def __len__(self) -> int:
         return len(self.images)
 
-    def subset(self, idx: np.ndarray) -> "Dataset":
+    def subset(self, idx: np.ndarray) -> Dataset:
         return Dataset(self.images[idx], self.state_labels[idx], self.part_labels[idx])
 
 

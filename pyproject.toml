@@ -8,3 +8,23 @@ requires-python = ">=3.11"
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-q"
+
+[tool.ruff]
+line-length = 118
+target-version = "py311"
+
+[tool.ruff.lint]
+# Pyflakes (F), pycodestyle (E/W), import-sort (I), pyupgrade (UP), flake8-bugbear (B), comprehensions (C4).
+select = ["E", "F", "I", "W", "UP", "B", "C4"]
+ignore = [
+    "E501",  # line length — the sim authors long MJCF strings + aligned inline comments by design; a
+             #             hard cap would force ugly wraps. Pyflakes/bugbear/import-order are what matter.
+    "E741",  # ambiguous var names (l, I) — used deliberately in some math/geometry
+    "B008",  # function call in default arg — the dataclass-default pattern (PoseGains()) is intentional
+    "B905",  # zip() without strict= — equal-length zips here are intentional; strict= is noise
+    "UP042", # str+Enum vs StrEnum — keep (str, Enum): StrEnum changes str(state) and this is load-bearing
+]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*" = ["E402"]   # sys.path insert before imports is intentional in standalone scripts
+"tests/*" = ["E402"]     # some tests import after a GL-availability guard

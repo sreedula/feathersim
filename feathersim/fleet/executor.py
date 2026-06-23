@@ -116,7 +116,7 @@ def _plan_leg(world: World, k: int, goal_xy: tuple[float, float]) -> list[tuple[
     return plan_path(world.occupancy_grid(), world.robot_pose(k)[:2], goal_xy)
 
 
-def _orca_neighbors(ctrl: "FleetController", k: int) -> list[ORCAAgent]:
+def _orca_neighbors(ctrl: FleetController, k: int) -> list[ORCAAgent]:
     """Every other robot as an ORCA disc. A robot that is itself driving (running ORCA) is a *reciprocal*
     peer (50/50 avoidance); a parked one is a non-reciprocal static obstacle the mover fully avoids."""
     world = ctrl.world
@@ -155,7 +155,7 @@ class FleetController:
         self.vel: list[tuple[float, float]] = [(0.0, 0.0)] * n  # each robot's world-frame velocity (for ORCA)
         self.next_select = [0.0] * n
         self.last_readings: list[dict | None] = [None] * n  # per-robot last perception (for the dashboard)
-        self.per_robot = {k: 0 for k in range(n)}
+        self.per_robot = dict.fromkeys(range(n), 0)
         self.per_machine = {m.name: 0 for m in world.machines}
         self.events: list[tuple] = []
         self.min_sep = math.inf

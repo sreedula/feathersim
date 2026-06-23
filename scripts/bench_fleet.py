@@ -24,7 +24,6 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 from feathersim.fleet import run_fleet  # noqa: E402
 from feathersim.fleet.scheduling import balanced, longest_waiting, nearest_done  # noqa: E402
 from feathersim.perception.infer import PerceivedState  # noqa: E402
-from feathersim.sim.machine import MachineState  # noqa: E402
 from feathersim.sim.world import ROBOT_RADIUS, World  # noqa: E402
 
 _STRATEGIES = {"longest_waiting": longest_waiting, "nearest_done": nearest_done, "balanced": balanced}

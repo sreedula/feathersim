@@ -203,7 +203,8 @@ def test_fleet_end_to_end_with_real_perception():
 
 def test_bench_fleet_smoke():
     """The benchmark script's per-config aggregator runs and reports a collision-free completed run."""
-    import sys, pathlib
+    import pathlib
+    import sys
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts"))
     from bench_fleet import _bench_one
 

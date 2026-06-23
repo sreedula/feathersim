@@ -7,7 +7,7 @@ from feathersim.perception.dataset import (
     majority_baseline,
     train_val_split,
 )
-from feathersim.perception.infer import Perception, PerceivedState
+from feathersim.perception.infer import PerceivedState, Perception
 from feathersim.perception.model import PerceptionCNN, images_to_tensor
 from feathersim.perception.randomize import DomainRandomizer, gaussian_noise, motion_blur
 

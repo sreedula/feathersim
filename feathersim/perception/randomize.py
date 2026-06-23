@@ -91,7 +91,7 @@ class DomainRandomizer:
     blur_length: tuple[int, int] = (3, 9)             # kernel length in px (inclusive)
 
     @classmethod
-    def at_difficulty(cls, difficulty: float) -> "DomainRandomizer":
+    def at_difficulty(cls, difficulty: float) -> DomainRandomizer:
         """A randomizer scaled by ``difficulty`` ∈ [0, 1] — 0 is clean (no corruption), 1 is full DR.
 
         Lets the dashboard dial perception difficulty live: occluder presence, noise σ, and blur probability

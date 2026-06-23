@@ -2,7 +2,6 @@
 
 from feathersim.sim.machine import Machine, MachineState, next_state
 
-
 # --- next_state: pure transition function ------------------------------------------------
 
 def test_idle_starts_running_at_threshold():

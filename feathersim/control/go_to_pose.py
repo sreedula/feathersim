@@ -113,7 +113,7 @@ def drive_to_pose(
     tolerance: PoseTolerance = PoseTolerance(),
     geom: MecanumGeometry = MecanumGeometry(),
     max_steps: int = 5000,
-    velocity_fn: "Callable[[Pose, Pose, PoseGains], Pose]" = velocity_command,
+    velocity_fn: Callable[[Pose, Pose, PoseGains], Pose] = velocity_command,
 ) -> DriveResult:
     """Drive the sim base to ``target`` (x, y, yaw); halt on arrival or after ``max_steps``.
 

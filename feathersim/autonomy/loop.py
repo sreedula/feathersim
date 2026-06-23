@@ -35,7 +35,7 @@ class Perceiver(Protocol):
     stand in. The real :class:`feathersim.perception.infer.Perception` satisfies it structurally.
     """
 
-    def perceive(self, world: World, renderer: "mujoco.Renderer | None") -> dict[str, "PerceivedState"]:
+    def perceive(self, world: World, renderer: mujoco.Renderer | None) -> dict[str, PerceivedState]:
         ...
 
 
@@ -74,7 +74,7 @@ def _advance(world, seconds: float) -> None:
 def run_autonomy(
     world: World,
     perception: Perceiver,
-    renderer: "mujoco.Renderer | None",
+    renderer: mujoco.Renderer | None,
     *,
     target_parts: int = 6,
     max_sim_seconds: float = 600.0,

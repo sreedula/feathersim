@@ -15,7 +15,6 @@ from feathersim.dashboard.fleet_server import create_app
 from feathersim.perception.randomize import DomainRandomizer
 from feathersim.sim.world import World
 
-
 # --- difficulty scaling (pure) -------------------------------------------------------------------
 
 
@@ -145,8 +144,9 @@ def test_manager_runs_live_and_publishes():
         assert mgr.frame3d() is not None and mgr.frame3d()[:2] == b"\xff\xd8"      # 3D overview JPEG
         cams = mgr.frame_cams()
         assert cams is not None and cams[:2] == b"\xff\xd8"                          # onboard-camera strip JPEG
-        from PIL import Image
         import io as _io
+
+        from PIL import Image
         assert Image.open(_io.BytesIO(cams)).size == (3 * CAM_SIZE, CAM_SIZE)        # 3 robot views side by side
         hud = mgr.frame_hud()                                                         # perception "sees & thinks" HUD
         assert hud is not None and hud[:2] == b"\xff\xd8"

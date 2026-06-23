@@ -23,8 +23,6 @@ from dataclasses import dataclass
 import mujoco
 from PIL import Image
 
-_log = logging.getLogger(__name__)
-
 from feathersim.control.go_to_pose import PoseGains, pose_error, velocity_command
 from feathersim.kinematics.holonomic import MecanumGeometry, body_to_wheels, wheels_to_body
 from feathersim.perception.dataset import IMAGE_SIZE
@@ -32,6 +30,8 @@ from feathersim.perception.infer import Perception
 from feathersim.sdk.robot import PreconditionError, Robot
 from feathersim.sim.machine import MachineState
 from feathersim.sim.world import TIMESTEP, World
+
+_log = logging.getLogger(__name__)
 
 AUTO, MANUAL = "auto", "manual"
 FEED_SIZE = 480  # overview-feed render resolution (px); perception still renders 64px machine crops

@@ -28,14 +28,14 @@ from feathersim.perception.train import load_or_train_clean_model, load_or_train
 from feathersim.policy.policy import PolicyController
 from feathersim.policy.train import load_or_train_policy
 from feathersim.sim.world import (
-    GRID_BOUNDS,
-    ROBOT_RADIUS,
-    STATE_LIGHT,
-    TIMESTEP,
     _OBSTACLE_HALF,
     _OBSTACLE_POSITIONS,
     _ROBOT_COLORS,
+    GRID_BOUNDS,
+    ROBOT_RADIUS,
+    STATE_LIGHT,
     TABLE_XY,
+    TIMESTEP,
     World,
 )
 
@@ -50,7 +50,7 @@ TRAIL_LEN = 48   # how many recent positions each robot's tactical-map trajector
 
 
 def _hex(rgb: tuple[float, float, float]) -> str:
-    return "#%02x%02x%02x" % tuple(int(255 * c) for c in rgb)
+    return "#{:02x}{:02x}{:02x}".format(*(int(255 * c) for c in rgb))
 
 
 class FleetSimManager:
@@ -310,7 +310,7 @@ class FleetSimManager:
         world, ctrl = self.world, self.ctrl
         sim_time = world.time
         machines = []
-        for i, m in enumerate(world.machines):
+        for m in world.machines:
             perceived = {}
             for k in range(world.n_robots):
                 reading = ctrl.last_readings[k]

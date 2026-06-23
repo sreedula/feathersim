@@ -14,7 +14,6 @@ from feathersim.control.go_to_pose import (
 )
 from feathersim.sim.world import World
 
-
 # --- pure pieces -------------------------------------------------------------------------
 
 @pytest.mark.parametrize(

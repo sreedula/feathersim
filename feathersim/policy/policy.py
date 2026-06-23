@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from feathersim.control.go_to_pose import PoseGains, Pose, goal_in_body_frame
+from feathersim.control.go_to_pose import Pose, PoseGains, goal_in_body_frame
 from feathersim.policy.model import PolicyMLP, denormalize_action, normalize_obs
 
 
