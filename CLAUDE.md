@@ -70,3 +70,17 @@ and any error text in the delegation prompt (subagents start with a fresh contex
 7. Next phase.
 
 See `PLAN.md` for the roadmap, `DECISIONS.md` for why, `LEARNINGS.md` for gotchas.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs live in GitHub Issues on `sreedula/feathersim`, via the `gh` CLI. External PRs are **not** a triage surface. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical defaults — `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
