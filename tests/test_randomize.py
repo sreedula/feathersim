@@ -193,7 +193,8 @@ def test_committed_metrics_show_robust_beats_clean():
 def test_bench_perception_smoke():
     """The perception benchmark's per-difficulty scorer runs and shows the robust model at least matching
     the clean baseline on clean data (difficulty 0)."""
-    import sys, pathlib
+    import pathlib
+    import sys
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "scripts"))
     from bench_perception import bench
 

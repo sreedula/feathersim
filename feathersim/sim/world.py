@@ -464,7 +464,7 @@ class World:
         for a in self._dof_adr[robot]:
             self.data.qvel[a] = 0.0
 
-    def driver(self, robot: int = 0) -> "_RobotDriver":
+    def driver(self, robot: int = 0) -> _RobotDriver:
         """A single-base :class:`~feathersim.control.go_to_pose.BaseDriver` view bound to ``robot``,
         so the go-to-pose controller and waypoint follower can drive any one base in a fleet."""
         return _RobotDriver(self, robot)
@@ -558,7 +558,7 @@ class World:
 
     def occupancy_grid(
         self, *, resolution: float = 0.1, inflation: float = ROBOT_RADIUS,
-        extra_obstacles: "tuple[Rect, ...] | list[Rect]" = (),
+        extra_obstacles: tuple[Rect, ...] | list[Rect] = (),
     ) -> OccupancyGrid:
         """Build an occupancy grid of the floor: machines/table inflated by ``inflation`` (the robot
         radius), static pillars by ``inflation + OBSTACLE_CLEARANCE`` (extra room for the follower's
@@ -587,13 +587,13 @@ class World:
         cam.distance = distance
         return cam
 
-    def render(self, renderer: "mujoco.Renderer", camera: "mujoco.MjvCamera") -> np.ndarray:
+    def render(self, renderer: mujoco.Renderer, camera: mujoco.MjvCamera) -> np.ndarray:
         """Render the scene from ``camera`` as an ``(H, W, 3)`` uint8 RGB frame."""
         renderer.update_scene(self.data, camera)
         return renderer.render()
 
-    def render_machine(self, renderer: "mujoco.Renderer", i: int,
-                       camera: "mujoco.MjvCamera | None" = None) -> np.ndarray:
+    def render_machine(self, renderer: mujoco.Renderer, i: int,
+                       camera: mujoco.MjvCamera | None = None) -> np.ndarray:
         """Render machine ``i``'s close-up as an ``(H, W, 3)`` uint8 RGB frame."""
         return self.render(renderer, camera if camera is not None else self.machine_camera(i))
 

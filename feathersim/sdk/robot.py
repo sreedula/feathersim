@@ -180,7 +180,7 @@ class Robot:
         and place it. The machine must already be ``done`` (use :meth:`wait_until_done`). Returns
         the delivered part's name."""
         self.move_to(machine)
-        part = self.pick(machine)
+        self.pick(machine)
         self.move_to("table")
         return self.place("table")
 

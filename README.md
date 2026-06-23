@@ -1,5 +1,7 @@
 # FeatherSim
 
+[![ci](https://github.com/sreedula/feathersim/actions/workflows/ci.yml/badge.svg)](https://github.com/sreedula/feathersim/actions/workflows/ci.yml)
+
 A machine-tending autonomy stack **in simulation**, inspired by Feather Robotics: holonomic wheeled
 mobile robots autonomously tend several CNC-style machines. It ships a developer **skill SDK**, a
 **perception** model trained on **auto-labeled** sim data (hardened with **domain randomization**),
@@ -175,6 +177,7 @@ rendering-dependent tests skip without a GL backend (`MUJOCO_GL=egl`/`osmesa` to
 - [`DECISIONS.md`](DECISIONS.md) — architecture decision log (why)
 - [`LEARNINGS.md`](LEARNINGS.md) — sim/training gotchas, never hit twice
 - [`CLAUDE.md`](CLAUDE.md) — conventions + the engineering loop
+- [`ENGINEERING.md`](ENGINEERING.md) — how the engineering *compounds* (the loop + the knowledge that survives context compaction + CI)
 
 ## Scripts
 

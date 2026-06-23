@@ -1,10 +1,16 @@
-.PHONY: install test demo fleet bench bench-perception dashboard teleop train policy clean
+.PHONY: install test lint fmt demo fleet bench bench-perception dashboard teleop train policy clean
 
 install:
 	python3 -m pip install -r requirements.txt
 
 test:
 	python3 -m pytest
+
+lint:
+	python3 -m ruff check .
+
+fmt:
+	python3 -m ruff check --fix .
 
 demo:
 	python3 -m feathersim.demo

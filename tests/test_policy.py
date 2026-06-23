@@ -13,7 +13,6 @@ import pytest
 from feathersim.control.go_to_pose import PoseGains, drive_to_pose, velocity_command
 from feathersim.policy.dataset import generate_dataset
 from feathersim.policy.model import (
-    ACTION_SCALE,
     PolicyMLP,
     denormalize_action,
     normalize_action,
@@ -21,7 +20,6 @@ from feathersim.policy.model import (
 from feathersim.policy.policy import PolicyController
 from feathersim.policy.train import closed_loop_compare, train
 from feathersim.sim.world import World
-
 
 # --- dataset & model (pure) ----------------------------------------------------------------------
 

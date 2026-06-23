@@ -36,7 +36,7 @@ def follow_path(
     waypoint_tolerance: float = 0.04,
     final_tolerance: PoseTolerance = PoseTolerance(),
     max_steps_per_leg: int = 3000,
-    velocity_fn: "Callable[[Pose, Pose, PoseGains], Pose]" = velocity_command,
+    velocity_fn: Callable[[Pose, Pose, PoseGains], Pose] = velocity_command,
 ) -> DriveResult:
     """Drive through ``waypoints`` (last one is the goal, reached at ``final_yaw``).
 
